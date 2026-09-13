@@ -382,9 +382,14 @@ FocusScope {
             }
             break;
         case 6:
-            root.backClicked();
+            root.goBack();
             break;
         }
+    }
+
+    function goBack() {
+        root.focus = false;
+        root.backClicked();
     }
 
     onVisibleChanged: {
@@ -417,7 +422,7 @@ FocusScope {
             root.previousSection();
             event.accepted = true;
         } else if (event.key === Qt.Key_Escape) {
-            root.backClicked();
+            root.goBack();
             event.accepted = true;
         } else if (event.key === Qt.Key_Right) {
             root.handleArrowKey(Qt.Key_Right);
@@ -478,7 +483,7 @@ FocusScope {
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
                         root.currentSection = 6;
-                        root.backClicked();
+                        root.goBack();
                     }
 
                     RowLayout {
@@ -519,7 +524,7 @@ FocusScope {
                 }
 
                 Text {
-                    text: "Use Tab to cycle sections, Arrow keys to choose options, Esc to return"
+                    text: "Tab to cycle headings • Arrow keys to choose • Esc to return"
                     font.family: Config.theme.font
                     font.pixelSize: Styling.fontSize(-3)
                     color: Colors.outline
@@ -657,7 +662,7 @@ FocusScope {
 
                         Text {
                             visible: root.currentSection === 0
-                            text: "Arrow keys to choose style, Enter to confirm"
+                            text: "Arrow keys to choose • Esc to go back"
                             font.family: Config.theme.font
                             font.pixelSize: Styling.fontSize(-4)
                             color: Colors.outline
@@ -797,6 +802,16 @@ FocusScope {
                                     color: Colors.primary
                                 }
                             }
+
+                            Item { Layout.fillWidth: true }
+
+                            Text {
+                                visible: root.currentSection === 1
+                                text: "Arrow keys to choose • Esc to go back"
+                                font.family: Config.theme.font
+                                font.pixelSize: Styling.fontSize(-4)
+                                color: Colors.outline
+                            }
                         }
 
                         GridLayout {
@@ -925,6 +940,16 @@ FocusScope {
                                         color: Colors.primary
                                     }
                                 }
+
+                                Item { Layout.fillWidth: true }
+
+                                Text {
+                                    visible: root.currentSection === 2
+                                    text: "Left/Right to choose • Esc to go back"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-4)
+                                    color: Colors.outline
+                                }
                             }
 
                             RowLayout {
@@ -1034,7 +1059,7 @@ FocusScope {
 
                                 Text {
                                     visible: root.currentSection === 3
-                                    text: "Enter or Space to toggle"
+                                    text: "Left/Right to switch • Space or Enter to toggle • Esc to go back"
                                     font.family: Config.theme.font
                                     font.pixelSize: Styling.fontSize(-4)
                                     color: Colors.outline
@@ -1196,6 +1221,16 @@ FocusScope {
                                 color: Colors.primary
                             }
                         }
+
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            visible: root.currentSection === 4
+                            text: "Arrow keys to choose • Esc to go back"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-4)
+                            color: Colors.outline
+                        }
                     }
 
                     Flow {
@@ -1307,6 +1342,16 @@ FocusScope {
                                 font.weight: Font.Bold
                                 color: Colors.primary
                             }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            visible: root.currentSection === 5
+                            text: "Left/Right to choose • Esc to go back"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-4)
+                            color: Colors.outline
                         }
                     }
 

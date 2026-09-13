@@ -119,10 +119,18 @@ index cdf136e7..ca988608 100644
      }
  
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index e2007a50..8b404b0a 100644
+index e2007a50..a341b55b 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-@@ -30,6 +30,17 @@ FocusScope {
+@@ -11,6 +11,7 @@ import qs.config
+ // Componente principal para el selector de fondos de pantalla.
+ FocusScope {
+     id: wallpapersTabRoot
++    focus: true
+ 
+     // Propiedades personalizadas para la funcionalidad del componente.
+     property string searchText: ""
+@@ -30,6 +31,18 @@ FocusScope {
          return perScreen[currentScreenName] !== undefined;
      }
  
@@ -134,13 +142,14 @@ index e2007a50..8b404b0a 100644
 +            wallpaperSettingsView.forceActiveFocus();
 +        } else {
 +            focusSearch();
++            Qt.callLater(focusSearch);
 +        }
 +    }
 +
      function togglePerScreenMode() {
          if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
          
-@@ -50,33 +61,20 @@ FocusScope {
+@@ -50,33 +63,20 @@ FocusScope {
      readonly property int gridColumns: 7
      readonly property int wallpaperMargin: 4
  
@@ -181,7 +190,7 @@ index e2007a50..8b404b0a 100644
              }
          },
          {
-@@ -91,6 +89,10 @@ FocusScope {
+@@ -91,7 +91,12 @@ FocusScope {
  
      // Función para enfocar el campo de búsqueda
      function focusSearch() {
@@ -190,9 +199,11 @@ index e2007a50..8b404b0a 100644
 +            return;
 +        }
          currentFocusIndex = -1;
++        wallpapersTabRoot.forceActiveFocus();
          wallpaperSearchInput.focusInput();
  
-@@ -128,8 +130,11 @@ FocusScope {
+         // Restaurar índice válido si está en -1 y hay wallpapers
+@@ -128,8 +133,11 @@ FocusScope {
  
      // Función para navegar hacia atrás (Shift+Tab)
      function focusPreviousElement() {
@@ -206,23 +217,6 @@ index e2007a50..8b404b0a 100644
              focusSearch();
          } else {
              currentFocusIndex--;
-@@ -244,6 +249,7 @@ FocusScope {
-     ColumnLayout {
-         anchors.fill: parent
-         spacing: 8
-+        visible: !wallpapersTabRoot.showSettings
- 
-         // Barra superior con OLED mode, búsqueda y scheme selector
-         RowLayout {
-@@ -264,6 +270,8 @@ FocusScope {
-                 handleTabNavigation: true
-                 disableCursorNavigation: true
-                 radius: Styling.radius(4)
-+                enabled: !wallpapersTabRoot.showSettings
-+                focus: !wallpapersTabRoot.showSettings
- 
-                 // Manejo de eventos de búsqueda y teclado.
-                 onSearchTextChanged: text => {
 @@ -341,6 +349,71 @@ FocusScope {
                  }
              }
@@ -331,7 +325,7 @@ index e2007a50..8b404b0a 100644
  
                  SchemeSelector {
                      id: schemeSelector
-@@ -1227,4 +1303,12 @@ FocusScope {
+@@ -1227,4 +1303,16 @@ FocusScope {
              }
          }
      }
@@ -341,6 +335,10 @@ index e2007a50..8b404b0a 100644
 +        anchors.fill: parent
 +        visible: wallpapersTabRoot.showSettings
 +        z: 2000
-+        onBackClicked: wallpapersTabRoot.showSettings = false
++        onBackClicked: {
++            wallpapersTabRoot.showSettings = false;
++            wallpapersTabRoot.focusSearch();
++            Qt.callLater(wallpapersTabRoot.focusSearch);
++        }
 +    }
  }
