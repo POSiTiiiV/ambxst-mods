@@ -1,0 +1,41 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Axenide/Ambxst/dev/docs/mods/manifest.schema.json",
+  "manifestVersion": 1,
+  "id": "positive.wallpaper-transitions",
+  "name": "Wallpaper Transitions",
+  "version": "1.0.0",
+  "description": "Smooth, configurable animated wallpaper transitions (Crossfade, Iris Expand/Shrink, Slides, Zoom & Fade, Pulse). Configure live in Dashboard Wallpaper tab (SUPER + , -> Settings).",
+  "license": "MIT",
+  "author": "POSiTiiiV",
+  "authorUrl": "https://github.com/POSiTiiiV",
+  "homepage": "https://github.com/POSiTiiiV/ambxst-mods/tree/main/packages/wallpaper-transitions",
+  "compatibility": {
+    "api": 1,
+    "ambxst": ">=1.3.0 <2.0.0",
+    "testedBaseCommits": [
+      "af9f8ad4f42d7cd77f57a7c75f6a2a5d1fb59674"
+    ]
+  },
+  "dependencies": [],
+  "conflicts": [],
+  "commands": [],
+  "permissions": [
+    "Renders animated transitions between desktop wallpapers"
+  ],
+  "operations": [
+    {
+      "type": "overlay",
+      "source": "payload/TransitionWallpaper.qml",
+      "target": "modules/widgets/dashboard/wallpapers/TransitionWallpaper.qml"
+    },
+    {
+      "type": "overlay",
+      "source": "payload/WallpaperSettingsView.qml",
+      "target": "modules/widgets/dashboard/wallpapers/WallpaperSettingsView.qml"
+    },
+    {
+      "type": "patch",
+      "source": "patches/wallpaper-transitions.patch"
+    }
+  ]
+}

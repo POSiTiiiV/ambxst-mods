@@ -1,0 +1,255 @@
+diff --git a/modules/globals/GlobalStates.qml b/modules/globals/GlobalStates.qml
+index 528a20b3..4e032db7 100644
+--- a/modules/globals/GlobalStates.qml
++++ b/modules/globals/GlobalStates.qml
+@@ -145,6 +145,38 @@ Singleton {
+         wallpaperSelectedIndex = -1;
+     }
+ 
++    // Wallpaper Transitions State (persisted via StateService)
++    property string wallpaperTransitionStyle: StateService.get("wallpaperTransitionStyle", "crossfade")
++    property string wallpaperTransitionEasing: StateService.get("wallpaperTransitionEasing", "cubic")
++    property int wallpaperTransitionDuration: StateService.get("wallpaperTransitionDuration", 400)
++    property bool wallpapersTabShowSettings: false
++
++    function setWallpaperTransitionStyle(style) {
++        wallpaperTransitionStyle = style;
++        StateService.set("wallpaperTransitionStyle", style);
++    }
++
++    function setWallpaperTransitionEasing(easing) {
++        wallpaperTransitionEasing = easing;
++        StateService.set("wallpaperTransitionEasing", easing);
++    }
++
++    function setWallpaperTransitionDuration(duration) {
++        wallpaperTransitionDuration = duration;
++        StateService.set("wallpaperTransitionDuration", duration);
++    }
++
++    Connections {
++        target: StateService
++        function onInitializedChanged() {
++            if (StateService.initialized) {
++                root.wallpaperTransitionStyle = StateService.get("wallpaperTransitionStyle", "crossfade");
++                root.wallpaperTransitionEasing = StateService.get("wallpaperTransitionEasing", "cubic");
++                root.wallpaperTransitionDuration = StateService.get("wallpaperTransitionDuration", 400);
++            }
++        }
++    }
++
+     function getNotchOpen(screenName) {
+         let visibilities = Visibilities.getForScreen(screenName);
+         return visibilities.launcher || visibilities.dashboard || visibilities.overview || visibilities.presets;
+diff --git a/modules/widgets/dashboard/controls/ModsPanel.qml b/modules/widgets/dashboard/controls/ModsPanel.qml
+index 31b40ca3..60bccaa7 100644
+--- a/modules/widgets/dashboard/controls/ModsPanel.qml
++++ b/modules/widgets/dashboard/controls/ModsPanel.qml
+@@ -7,6 +7,7 @@ import qs.config
+ import qs.modules.components
+ import qs.modules.services
+ import qs.modules.theme
++import qs.modules.globals
+ 
+ Item {
+     id: root
+@@ -869,6 +870,47 @@ Item {
+                         wrapMode: Text.Wrap
+                     }
+ 
++                    StyledRect {
++                        visible: root.selectedMod?.id === "positive.wallpaper-transitions"
++                        Layout.fillWidth: true
++                        Layout.preferredHeight: 38
++                        variant: openWallMa.containsMouse ? "primary" : "focus"
++                        radius: Styling.radius(4)
++
++                        MouseArea {
++                            id: openWallMa
++                            anchors.fill: parent
++                            hoverEnabled: true
++                            cursorShape: Qt.PointingHandCursor
++                            onClicked: {
++                                GlobalStates.settingsWindowVisible = false;
++                                GlobalStates.wallpapersTabShowSettings = true;
++                                GlobalStates.dashboardCurrentTab = 1;
++                                Visibilities.setActiveModule("dashboard");
++                            }
++
++                            RowLayout {
++                                anchors.centerIn: parent
++                                spacing: 8
++
++                                Text {
++                                    text: Icons.gear
++                                    font.family: Icons.font
++                                    font.pixelSize: 18
++                                    color: openWallMa.containsMouse ? Colors.overPrimary : Colors.overSurface
++                                }
++
++                                Text {
++                                    text: "Open Wallpaper & Transition Settings"
++                                    font.family: Config.theme.font
++                                    font.pixelSize: Styling.fontSize(0)
++                                    font.weight: Font.Medium
++                                    color: openWallMa.containsMouse ? Colors.overPrimary : Colors.overSurface
++                                }
++                            }
++                        }
++                    }
++
+                     Text {
+                         visible: (root.selectedMod?.error ?? "") !== ""
+                             || (root.selectedMod?.compatibilityError ?? "") !== ""
+diff --git a/modules/widgets/dashboard/wallpapers/Wallpaper.qml b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
+index cdf136e7..ca988608 100644
+--- a/modules/widgets/dashboard/wallpapers/Wallpaper.qml
++++ b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
+@@ -1230,10 +1230,11 @@ PanelWindow {
+             }
+         }
+ 
+-        WallpaperImage {
++        TransitionWallpaper {
+             id: wallImage
+             anchors.fill: parent
+             source: wallpaper.effectiveWallpaper
++            wallpaperManager: wallpaper
+         }
+     }
+ 
+diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
+index e2007a50..48ba24cb 100644
+--- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
++++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
+@@ -30,6 +30,17 @@ FocusScope {
+         return perScreen[currentScreenName] !== undefined;
+     }
+ 
++    property bool showSettings: GlobalStates.wallpapersTabShowSettings
++
++    onShowSettingsChanged: {
++        GlobalStates.wallpapersTabShowSettings = showSettings;
++        if (showSettings) {
++            wallpaperSettingsView.forceActiveFocus();
++        } else {
++            focusSearch();
++        }
++    }
++
+     function togglePerScreenMode() {
+         if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
+         
+@@ -91,6 +102,10 @@ FocusScope {
+ 
+     // Función para enfocar el campo de búsqueda
+     function focusSearch() {
++        if (showSettings) {
++            wallpaperSettingsView.forceActiveFocus();
++            return;
++        }
+         currentFocusIndex = -1;
+         wallpaperSearchInput.focusInput();
+ 
+@@ -244,6 +259,7 @@ FocusScope {
+     ColumnLayout {
+         anchors.fill: parent
+         spacing: 8
++        visible: !wallpapersTabRoot.showSettings
+ 
+         // Barra superior con OLED mode, búsqueda y scheme selector
+         RowLayout {
+@@ -264,6 +280,8 @@ FocusScope {
+                 handleTabNavigation: true
+                 disableCursorNavigation: true
+                 radius: Styling.radius(4)
++                enabled: !wallpapersTabRoot.showSettings
++                focus: !wallpapersTabRoot.showSettings
+ 
+                 // Manejo de eventos de búsqueda y teclado.
+                 onSearchTextChanged: text => {
+@@ -341,6 +359,35 @@ FocusScope {
+                 }
+             }
+ 
++            // Settings Button to open Wallpaper & Transition Settings
++            Item {
++                id: settingsBtnContainer
++                Layout.preferredWidth: 48
++                Layout.preferredHeight: 48
++
++                StyledRect {
++                    variant: settingsMa.containsMouse ? "focus" : "pane"
++                    anchors.fill: parent
++                    radius: Styling.radius(4)
++
++                    MouseArea {
++                        id: settingsMa
++                        anchors.fill: parent
++                        hoverEnabled: true
++                        cursorShape: Qt.PointingHandCursor
++                        onClicked: wallpapersTabRoot.showSettings = true
++
++                        Text {
++                            anchors.centerIn: parent
++                            text: Icons.gear
++                            font.family: Icons.font
++                            font.pixelSize: 20
++                            color: Colors.overSurface
++                        }
++                    }
++                }
++            }
++
+             // Per-Screen Monitor toggle
+             Item {
+                 id: perScreenCheckboxContainer
+@@ -487,8 +534,9 @@ FocusScope {
+             // OLED Mode
+             Item {
+                 id: oledCheckboxContainer
+-                Layout.preferredWidth: 100
+-                Layout.preferredHeight: 48
++                visible: false
++                Layout.preferredWidth: 0
++                Layout.preferredHeight: 0
+ 
+                 property bool keyboardNavigationActive: false
+ 
+@@ -642,8 +690,9 @@ FocusScope {
+             // Tint Toggle a la derecha del search
+             Item {
+                 id: tintCheckboxContainer
+-                Layout.preferredWidth: 100
+-                Layout.preferredHeight: 48
++                visible: false
++                Layout.preferredWidth: 0
++                Layout.preferredHeight: 0
+ 
+                 property bool keyboardNavigationActive: false
+ 
+@@ -774,8 +823,9 @@ FocusScope {
+ 
+             // Scheme Selector a la derecha
+             Item {
+-                Layout.preferredWidth: 200
+-                Layout.preferredHeight: 48
++                visible: false
++                Layout.preferredWidth: 0
++                Layout.preferredHeight: 0
+ 
+                 SchemeSelector {
+                     id: schemeSelector
+@@ -1227,4 +1277,12 @@ FocusScope {
+             }
+         }
+     }
++
++    WallpaperSettingsView {
++        id: wallpaperSettingsView
++        anchors.fill: parent
++        visible: wallpapersTabRoot.showSettings
++        z: 2000
++        onBackClicked: wallpapersTabRoot.showSettings = false
++    }
+ }
