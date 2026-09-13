@@ -119,7 +119,7 @@ index cdf136e7..ca988608 100644
      }
  
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index e2007a50..48ba24cb 100644
+index e2007a50..8b404b0a 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -30,6 +30,17 @@ FocusScope {
@@ -140,7 +140,48 @@ index e2007a50..48ba24cb 100644
      function togglePerScreenMode() {
          if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
          
-@@ -91,6 +102,10 @@ FocusScope {
+@@ -50,33 +61,20 @@ FocusScope {
+     readonly property int gridColumns: 7
+     readonly property int wallpaperMargin: 4
+ 
+-    // Array de elementos focusables para navegación cíclica
++    // Array de elementos focusables para navegación cíclica: Search -> Settings Button -> eDP Monitor -> Filters
+     property var focusableElements: [
+         {
+-            id: "perScreenCheckbox",
+-            focusFunc: function () {
+-                perScreenCheckboxContainer.keyboardNavigationActive = true;
+-                perScreenCheckbox.forceActiveFocus();
+-            }
+-        },
+-        {
+-            id: "oledCheckbox",
+-            focusFunc: function () {
+-                oledCheckboxContainer.keyboardNavigationActive = true;
+-                oledCheckbox.forceActiveFocus();
+-            }
+-        },
+-        {
+-            id: "tintCheckbox",
++            id: "settingsButton",
+             focusFunc: function () {
+-                tintCheckboxContainer.keyboardNavigationActive = true;
+-                tintCheckbox.forceActiveFocus();
++                settingsBtnContainer.keyboardNavigationActive = true;
++                settingsBtn.forceActiveFocus();
+             }
+         },
+         {
+-            id: "schemeSelector",
++            id: "perScreenCheckbox",
+             focusFunc: function () {
+-                schemeSelector.openAndFocus();
++                perScreenCheckboxContainer.keyboardNavigationActive = true;
++                perScreenCheckbox.forceActiveFocus();
+             }
+         },
+         {
+@@ -91,6 +89,10 @@ FocusScope {
  
      // Función para enfocar el campo de búsqueda
      function focusSearch() {
@@ -151,7 +192,21 @@ index e2007a50..48ba24cb 100644
          currentFocusIndex = -1;
          wallpaperSearchInput.focusInput();
  
-@@ -244,6 +259,7 @@ FocusScope {
+@@ -128,8 +130,11 @@ FocusScope {
+ 
+     // Función para navegar hacia atrás (Shift+Tab)
+     function focusPreviousElement() {
+-        if (currentFocusIndex === -1 || currentFocusIndex === 0) {
+-            // Si estamos en el search o en el primer elemento focusable, volver al search
++        if (currentFocusIndex === -1) {
++            currentFocusIndex = focusableElements.length - 1;
++            focusableElements[currentFocusIndex].focusFunc();
++        } else if (currentFocusIndex === 0) {
++            // Si estamos en el primer elemento focusable, volver al search
+             focusSearch();
+         } else {
+             currentFocusIndex--;
+@@ -244,6 +249,7 @@ FocusScope {
      ColumnLayout {
          anchors.fill: parent
          spacing: 8
@@ -159,7 +214,7 @@ index e2007a50..48ba24cb 100644
  
          // Barra superior con OLED mode, búsqueda y scheme selector
          RowLayout {
-@@ -264,6 +280,8 @@ FocusScope {
+@@ -264,6 +270,8 @@ FocusScope {
                  handleTabNavigation: true
                  disableCursorNavigation: true
                  radius: Styling.radius(4)
@@ -168,7 +223,7 @@ index e2007a50..48ba24cb 100644
  
                  // Manejo de eventos de búsqueda y teclado.
                  onSearchTextChanged: text => {
-@@ -341,6 +359,35 @@ FocusScope {
+@@ -341,6 +349,71 @@ FocusScope {
                  }
              }
  
@@ -178,24 +233,60 @@ index e2007a50..48ba24cb 100644
 +                Layout.preferredWidth: 48
 +                Layout.preferredHeight: 48
 +
++                property bool keyboardNavigationActive: false
++
 +                StyledRect {
-+                    variant: settingsMa.containsMouse ? "focus" : "pane"
++                    variant: (settingsBtnContainer.keyboardNavigationActive && settingsBtn.activeFocus) || settingsMa.containsMouse ? "focus" : "pane"
 +                    anchors.fill: parent
 +                    radius: Styling.radius(4)
 +
-+                    MouseArea {
-+                        id: settingsMa
++                    Item {
++                        id: settingsBtn
 +                        anchors.fill: parent
-+                        hoverEnabled: true
-+                        cursorShape: Qt.PointingHandCursor
-+                        onClicked: wallpapersTabRoot.showSettings = true
 +
-+                        Text {
-+                            anchors.centerIn: parent
-+                            text: Icons.gear
-+                            font.family: Icons.font
-+                            font.pixelSize: 20
-+                            color: Colors.overSurface
++                        onActiveFocusChanged: {
++                            if (!activeFocus) {
++                                settingsBtnContainer.keyboardNavigationActive = false;
++                            }
++                        }
++
++                        Keys.onPressed: event => {
++                            if (event.key === Qt.Key_Tab) {
++                                settingsBtnContainer.keyboardNavigationActive = false;
++                                if (event.modifiers & Qt.ShiftModifier) {
++                                    wallpapersTabRoot.focusPreviousElement();
++                                } else {
++                                    wallpapersTabRoot.focusNextElement();
++                                }
++                                event.accepted = true;
++                            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
++                                settingsBtnContainer.keyboardNavigationActive = false;
++                                wallpapersTabRoot.showSettings = true;
++                                event.accepted = true;
++                            } else if (event.key === Qt.Key_Escape) {
++                                settingsBtnContainer.keyboardNavigationActive = false;
++                                focusSearch();
++                                event.accepted = true;
++                            }
++                        }
++
++                        MouseArea {
++                            id: settingsMa
++                            anchors.fill: parent
++                            hoverEnabled: true
++                            cursorShape: Qt.PointingHandCursor
++                            onClicked: {
++                                settingsBtnContainer.keyboardNavigationActive = false;
++                                wallpapersTabRoot.showSettings = true;
++                            }
++
++                            Text {
++                                anchors.centerIn: parent
++                                text: Icons.gear
++                                font.family: Icons.font
++                                font.pixelSize: 20
++                                color: (settingsBtnContainer.keyboardNavigationActive && settingsBtn.activeFocus) || settingsMa.containsMouse ? Styling.srItem("focus") : Colors.overSurface
++                            }
 +                        }
 +                    }
 +                }
@@ -204,7 +295,7 @@ index e2007a50..48ba24cb 100644
              // Per-Screen Monitor toggle
              Item {
                  id: perScreenCheckboxContainer
-@@ -487,8 +534,9 @@ FocusScope {
+@@ -487,8 +560,9 @@ FocusScope {
              // OLED Mode
              Item {
                  id: oledCheckboxContainer
@@ -216,7 +307,7 @@ index e2007a50..48ba24cb 100644
  
                  property bool keyboardNavigationActive: false
  
-@@ -642,8 +690,9 @@ FocusScope {
+@@ -642,8 +716,9 @@ FocusScope {
              // Tint Toggle a la derecha del search
              Item {
                  id: tintCheckboxContainer
@@ -228,7 +319,7 @@ index e2007a50..48ba24cb 100644
  
                  property bool keyboardNavigationActive: false
  
-@@ -774,8 +823,9 @@ FocusScope {
+@@ -774,8 +849,9 @@ FocusScope {
  
              // Scheme Selector a la derecha
              Item {
@@ -240,7 +331,7 @@ index e2007a50..48ba24cb 100644
  
                  SchemeSelector {
                      id: schemeSelector
-@@ -1227,4 +1277,12 @@ FocusScope {
+@@ -1227,4 +1303,12 @@ FocusScope {
              }
          }
      }
