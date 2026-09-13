@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "positive.wallpaper-transitions",
   "name": "Wallpaper Transitions",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Smooth, configurable animated wallpaper transitions (Crossfade, Iris Expand/Shrink, Slides, Zoom & Fade, Pulse). Configure live in Dashboard Wallpaper tab (SUPER + , -> Settings).",
   "license": "MIT",
   "author": "POSiTiiiV",

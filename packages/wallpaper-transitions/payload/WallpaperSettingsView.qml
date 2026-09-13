@@ -32,6 +32,16 @@ FocusScope {
 
     readonly property string modId: "positive.wallpaper-transitions"
 
+    // Active navigation section
+    // 0: Transition Style, 1: Easing Curve, 2: Animation Duration, 3: Display & Shader Effects, 4: Material You Schemes, 5: Color Presets, 6: Back Button
+    property int currentSection: 0
+    property int focusedStyleIndex: 0
+    property int focusedEasingIndex: 0
+    property int focusedSpeedIndex: 1
+    property int focusedEffectIndex: 0
+    property int focusedSchemeIndex: 0
+    property int focusedPresetIndex: 0
+
     readonly property var styleOptions: [
         { id: "crossfade", title: "Crossfade", desc: "Smooth continuous opacity dissolve", icon: Icons.sparkle },
         { id: "circleOut", title: "Circle Expand", desc: "Iris expands outwards from center", icon: Icons.circle },
@@ -74,7 +84,28 @@ FocusScope {
 
     property var presets: (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.colorPresets) ? GlobalStates.wallpaperManager.colorPresets : []
 
+    NumberAnimation {
+        id: scrollAnim
+        target: scrollArea
+        property: "contentY"
+        duration: Config.animDuration > 0 ? 250 : 0
+        easing.type: Easing.OutCubic
+    }
+
+    function smoothScrollTo(newY) {
+        let maxScroll = Math.max(0, scrollArea.contentHeight - scrollArea.height);
+        let clampedY = Math.max(0, Math.min(maxScroll, newY));
+        if (Config.animDuration > 0) {
+            scrollAnim.stop();
+            scrollAnim.to = clampedY;
+            scrollAnim.start();
+        } else {
+            scrollArea.contentY = clampedY;
+        }
+    }
+
     function scrollBy(deltaY) {
+        scrollAnim.stop();
         let maxScroll = Math.max(0, scrollArea.contentHeight - scrollArea.height);
         scrollArea.contentY = Math.max(0, Math.min(maxScroll, scrollArea.contentY + deltaY));
     }
@@ -106,61 +137,310 @@ FocusScope {
         }
     }
 
-    Keys.onEscapePressed: (event) => {
-        root.backClicked();
-        event.accepted = true;
+    function getAvailableSections() {
+        let secs = [0, 1, 2, 3, 4];
+        if (root.presets && root.presets.length > 0) {
+            secs.push(5);
+        }
+        secs.push(6);
+        return secs;
     }
 
-    Keys.onDownPressed: (event) => {
-        root.scrollBy(60);
-        event.accepted = true;
+    function scrollToSection(sec) {
+        if (sec === 0 || sec === 6) {
+            smoothScrollTo(0);
+            return;
+        }
+        let targetItem = null;
+        if (sec === 1 || sec === 2 || sec === 3) {
+            targetItem = sectionEasingAndEffects;
+        } else if (sec === 4) {
+            targetItem = sectionSchemes;
+        } else if (sec === 5) {
+            targetItem = sectionPresets;
+        }
+
+        if (targetItem) {
+            let targetY = targetItem.y;
+            let targetH = targetItem.height;
+            let viewH = scrollArea.height;
+            let maxScroll = Math.max(0, scrollArea.contentHeight - viewH);
+
+            if (sec === 3) {
+                smoothScrollTo(Math.min(maxScroll, Math.max(0, targetY + targetH - viewH + 20)));
+            } else if (targetY < scrollArea.contentY) {
+                smoothScrollTo(Math.max(0, targetY - 10));
+            } else if (targetY + 60 > scrollArea.contentY + viewH) {
+                smoothScrollTo(Math.min(maxScroll, targetY - 10));
+            }
+        }
     }
 
-    Keys.onUpPressed: (event) => {
-        root.scrollBy(-60);
-        event.accepted = true;
+    function syncSectionFocus(sec) {
+        switch (sec) {
+        case 0:
+            for (let i = 0; i < root.styleOptions.length; i++) {
+                if (root.styleOptions[i].id === root.currentStyle) {
+                    focusedStyleIndex = i;
+                    break;
+                }
+            }
+            break;
+        case 1:
+            for (let i = 0; i < root.easingOptions.length; i++) {
+                if (root.easingOptions[i].id === root.currentEasing) {
+                    focusedEasingIndex = i;
+                    break;
+                }
+            }
+            break;
+        case 2:
+            for (let i = 0; i < root.speedOptions.length; i++) {
+                if (Math.abs(root.currentDuration - root.speedOptions[i].value) < 50) {
+                    focusedSpeedIndex = i;
+                    break;
+                }
+            }
+            break;
+        case 3:
+            if (focusedEffectIndex < 0 || focusedEffectIndex > 1) {
+                focusedEffectIndex = 0;
+            }
+            break;
+        case 4:
+            if (GlobalStates.wallpaperManager) {
+                let curScheme = GlobalStates.wallpaperManager.currentMatugenScheme;
+                for (let i = 0; i < root.matugenSchemes.length; i++) {
+                    if (root.matugenSchemes[i].id === curScheme) {
+                        focusedSchemeIndex = i;
+                        break;
+                    }
+                }
+            }
+            break;
+        case 5:
+            if (root.presets && GlobalStates.wallpaperManager) {
+                let curPreset = GlobalStates.wallpaperManager.activeColorPreset;
+                for (let i = 0; i < root.presets.length; i++) {
+                    if (String(root.presets[i]) === curPreset) {
+                        focusedPresetIndex = i;
+                        break;
+                    }
+                }
+            }
+            break;
+        case 6:
+            break;
+        }
+        scrollToSection(sec);
+    }
+
+    function nextSection() {
+        let secs = getAvailableSections();
+        let currentIdxInSecs = secs.indexOf(currentSection);
+        if (currentIdxInSecs === -1 || currentIdxInSecs >= secs.length - 1) {
+            currentSection = secs[0];
+        } else {
+            currentSection = secs[currentIdxInSecs + 1];
+        }
+        syncSectionFocus(currentSection);
+    }
+
+    function previousSection() {
+        let secs = getAvailableSections();
+        let currentIdxInSecs = secs.indexOf(currentSection);
+        if (currentIdxInSecs <= 0) {
+            currentSection = secs[secs.length - 1];
+        } else {
+            currentSection = secs[currentIdxInSecs - 1];
+        }
+        syncSectionFocus(currentSection);
+    }
+
+    function handleArrowKey(key) {
+        switch (currentSection) {
+        case 0:
+            if (key === Qt.Key_Right) {
+                if (focusedStyleIndex < styleOptions.length - 1) focusedStyleIndex++;
+            } else if (key === Qt.Key_Left) {
+                if (focusedStyleIndex > 0) focusedStyleIndex--;
+            } else if (key === Qt.Key_Down) {
+                if (focusedStyleIndex + 2 < styleOptions.length) focusedStyleIndex += 2;
+                else if (focusedStyleIndex + 1 < styleOptions.length) focusedStyleIndex += 1;
+            } else if (key === Qt.Key_Up) {
+                if (focusedStyleIndex - 2 >= 0) focusedStyleIndex -= 2;
+                else if (focusedStyleIndex > 0) focusedStyleIndex = 0;
+            }
+            root.updateSetting("transitionStyle", styleOptions[focusedStyleIndex].id);
+            break;
+
+        case 1:
+            if (key === Qt.Key_Right) {
+                if (focusedEasingIndex < easingOptions.length - 1) focusedEasingIndex++;
+            } else if (key === Qt.Key_Left) {
+                if (focusedEasingIndex > 0) focusedEasingIndex--;
+            } else if (key === Qt.Key_Down) {
+                if (focusedEasingIndex + 2 < easingOptions.length) focusedEasingIndex += 2;
+                else if (focusedEasingIndex + 1 < easingOptions.length) focusedEasingIndex += 1;
+            } else if (key === Qt.Key_Up) {
+                if (focusedEasingIndex - 2 >= 0) focusedEasingIndex -= 2;
+                else if (focusedEasingIndex > 0) focusedEasingIndex = 0;
+            }
+            root.updateSetting("easingCurve", easingOptions[focusedEasingIndex].id);
+            break;
+
+        case 2:
+            if (key === Qt.Key_Right || key === Qt.Key_Down) {
+                if (focusedSpeedIndex < speedOptions.length - 1) focusedSpeedIndex++;
+            } else if (key === Qt.Key_Left || key === Qt.Key_Up) {
+                if (focusedSpeedIndex > 0) focusedSpeedIndex--;
+            }
+            root.updateSetting("duration", speedOptions[focusedSpeedIndex].value);
+            break;
+
+        case 3:
+            if (key === Qt.Key_Right || key === Qt.Key_Down) {
+                focusedEffectIndex = 1;
+            } else if (key === Qt.Key_Left || key === Qt.Key_Up) {
+                focusedEffectIndex = 0;
+            }
+            break;
+
+        case 4:
+            if (key === Qt.Key_Right) {
+                if (focusedSchemeIndex < matugenSchemes.length - 1) focusedSchemeIndex++;
+            } else if (key === Qt.Key_Left) {
+                if (focusedSchemeIndex > 0) focusedSchemeIndex--;
+            } else if (key === Qt.Key_Down) {
+                if (focusedSchemeIndex + 4 < matugenSchemes.length) focusedSchemeIndex += 4;
+                else focusedSchemeIndex = matugenSchemes.length - 1;
+            } else if (key === Qt.Key_Up) {
+                if (focusedSchemeIndex - 4 >= 0) focusedSchemeIndex -= 4;
+                else focusedSchemeIndex = 0;
+            }
+            if (GlobalStates.wallpaperManager) {
+                GlobalStates.wallpaperManager.setMatugenScheme(matugenSchemes[focusedSchemeIndex].id);
+            }
+            break;
+
+        case 5:
+            if (root.presets && root.presets.length > 0) {
+                if (key === Qt.Key_Right || key === Qt.Key_Down) {
+                    if (focusedPresetIndex < root.presets.length - 1) focusedPresetIndex++;
+                } else if (key === Qt.Key_Left || key === Qt.Key_Up) {
+                    if (focusedPresetIndex > 0) focusedPresetIndex--;
+                }
+                if (GlobalStates.wallpaperManager) {
+                    GlobalStates.wallpaperManager.setColorPreset(String(root.presets[focusedPresetIndex]));
+                }
+            }
+            break;
+
+        case 6:
+            break;
+        }
+    }
+
+    function handleActivate() {
+        switch (currentSection) {
+        case 0:
+            if (focusedStyleIndex >= 0 && focusedStyleIndex < styleOptions.length) {
+                root.updateSetting("transitionStyle", styleOptions[focusedStyleIndex].id);
+            }
+            break;
+        case 1:
+            if (focusedEasingIndex >= 0 && focusedEasingIndex < easingOptions.length) {
+                root.updateSetting("easingCurve", easingOptions[focusedEasingIndex].id);
+            }
+            break;
+        case 2:
+            if (focusedSpeedIndex >= 0 && focusedSpeedIndex < speedOptions.length) {
+                root.updateSetting("duration", speedOptions[focusedSpeedIndex].value);
+            }
+            break;
+        case 3:
+            if (focusedEffectIndex === 0) {
+                Config.theme.oledMode = !Config.theme.oledMode;
+            } else if (focusedEffectIndex === 1) {
+                if (GlobalStates.wallpaperManager) {
+                    GlobalStates.wallpaperManager.tintEnabled = !GlobalStates.wallpaperManager.tintEnabled;
+                }
+            }
+            break;
+        case 4:
+            if (focusedSchemeIndex >= 0 && focusedSchemeIndex < matugenSchemes.length) {
+                if (GlobalStates.wallpaperManager) {
+                    GlobalStates.wallpaperManager.setMatugenScheme(matugenSchemes[focusedSchemeIndex].id);
+                }
+            }
+            break;
+        case 5:
+            if (root.presets && focusedPresetIndex >= 0 && focusedPresetIndex < root.presets.length) {
+                if (GlobalStates.wallpaperManager) {
+                    GlobalStates.wallpaperManager.setColorPreset(String(root.presets[focusedPresetIndex]));
+                }
+            }
+            break;
+        case 6:
+            root.backClicked();
+            break;
+        }
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            root.forceActiveFocus();
+            currentSection = 0;
+            syncSectionFocus(0);
+        }
+    }
+
+    onActiveFocusChanged: {
+        if (activeFocus && visible) {
+            syncSectionFocus(currentSection);
+        }
+    }
+
+    Component.onCompleted: {
+        syncSectionFocus(0);
     }
 
     Keys.onPressed: (event) => {
-        if (event.key === Qt.Key_PageDown) {
+        if (event.key === Qt.Key_Tab) {
+            if (event.modifiers & Qt.ShiftModifier) {
+                root.previousSection();
+            } else {
+                root.nextSection();
+            }
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Backtab) {
+            root.previousSection();
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Escape) {
+            root.backClicked();
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Right) {
+            root.handleArrowKey(Qt.Key_Right);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Left) {
+            root.handleArrowKey(Qt.Key_Left);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Down) {
+            root.handleArrowKey(Qt.Key_Down);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Up) {
+            root.handleArrowKey(Qt.Key_Up);
+            event.accepted = true;
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+            root.handleActivate();
+            event.accepted = true;
+        } else if (event.key === Qt.Key_PageDown) {
             root.scrollBy(scrollArea.height * 0.75);
             event.accepted = true;
         } else if (event.key === Qt.Key_PageUp) {
             root.scrollBy(-scrollArea.height * 0.75);
             event.accepted = true;
         }
-    }
-
-    Keys.onLeftPressed: (event) => {
-        let idx = -1;
-        for (let i = 0; i < root.styleOptions.length; i++) {
-            if (root.styleOptions[i].id === root.currentStyle) {
-                idx = i;
-                break;
-            }
-        }
-        if (idx > 0) {
-            root.updateSetting("transitionStyle", root.styleOptions[idx - 1].id);
-        } else if (idx === 0) {
-            root.updateSetting("transitionStyle", root.styleOptions[root.styleOptions.length - 1].id);
-        }
-        event.accepted = true;
-    }
-
-    Keys.onRightPressed: (event) => {
-        let idx = -1;
-        for (let i = 0; i < root.styleOptions.length; i++) {
-            if (root.styleOptions[i].id === root.currentStyle) {
-                idx = i;
-                break;
-            }
-        }
-        if (idx >= 0 && idx < root.styleOptions.length - 1) {
-            root.updateSetting("transitionStyle", root.styleOptions[idx + 1].id);
-        } else if (idx === root.styleOptions.length - 1) {
-            root.updateSetting("transitionStyle", root.styleOptions[0].id);
-        }
-        event.accepted = true;
     }
 
     ColumnLayout {
@@ -178,15 +458,28 @@ FocusScope {
                 id: backBtnRect
                 Layout.preferredWidth: 175
                 Layout.preferredHeight: 38
-                variant: backMa.containsMouse ? "focus" : "pane"
+                readonly property bool isFocused: root.currentSection === 6
+                variant: (isFocused || backMa.containsMouse) ? "focus" : "pane"
                 radius: Styling.radius(4)
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "transparent"
+                    border.color: Colors.primary
+                    border.width: 2
+                    radius: Styling.radius(4)
+                    visible: backBtnRect.isFocused
+                }
 
                 MouseArea {
                     id: backMa
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.backClicked()
+                    onClicked: {
+                        root.currentSection = 6;
+                        root.backClicked();
+                    }
 
                     RowLayout {
                         anchors.fill: parent
@@ -198,15 +491,15 @@ FocusScope {
                             text: Icons.caretLeft
                             font.family: Icons.font
                             font.pixelSize: 18
-                            color: Colors.overSurface
+                            color: backBtnRect.isFocused ? Colors.primary : Colors.overSurface
                         }
 
                         Text {
                             text: "Back to Wallpapers"
                             font.family: Config.theme.font
                             font.pixelSize: Config.theme.fontSize
-                            font.weight: Font.Medium
-                            color: Colors.overSurface
+                            font.weight: backBtnRect.isFocused ? Font.Bold : Font.Medium
+                            color: backBtnRect.isFocused ? Colors.primary : Colors.overSurface
                         }
                     }
                 }
@@ -226,7 +519,7 @@ FocusScope {
                 }
 
                 Text {
-                    text: "Configure transition animations, speed, Material You schemes, and display modes"
+                    text: "Use Tab to cycle sections, Arrow keys to choose options, Esc to return"
                     font.family: Config.theme.font
                     font.pixelSize: Styling.fontSize(-3)
                     color: Colors.outline
@@ -325,17 +618,50 @@ FocusScope {
                 width: scrollArea.width - (vScrollBar.visible ? 16 : 4)
                 spacing: 14
 
-                // Section 1: Transitions
+                // Section 0: Transitions
                 ColumnLayout {
+                    id: sectionStyle
                     Layout.fillWidth: true
                     spacing: 6
 
-                    Text {
-                        text: "TRANSITION STYLE"
-                        font.family: Config.theme.font
-                        font.pixelSize: Styling.fontSize(-2)
-                        font.weight: Font.Bold
-                        color: Colors.overBackground
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Text {
+                            text: "TRANSITION STYLE"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-2)
+                            font.weight: Font.Bold
+                            color: root.currentSection === 0 ? Colors.primary : Colors.overBackground
+                        }
+
+                        StyledRect {
+                            visible: root.currentSection === 0
+                            variant: "focus"
+                            Layout.preferredHeight: 18
+                            Layout.preferredWidth: 54
+                            radius: Styling.radius(2)
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "ACTIVE"
+                                font.family: Config.theme.font
+                                font.pixelSize: Styling.fontSize(-4)
+                                font.weight: Font.Bold
+                                color: Colors.primary
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            visible: root.currentSection === 0
+                            text: "Arrow keys to choose style, Enter to confirm"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-4)
+                            color: Colors.outline
+                        }
                     }
 
                     GridLayout {
@@ -350,19 +676,35 @@ FocusScope {
                             delegate: StyledRect {
                                 id: styleCard
                                 required property var modelData
+                                required property int index
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 52
-                                variant: isSelected ? "primary" : (maCard.containsMouse ? "focus" : "pane")
-                                radius: Styling.radius(4)
 
                                 readonly property bool isSelected: modelData.id === root.currentStyle
+                                readonly property bool isFocused: root.currentSection === 0 && root.focusedStyleIndex === index
+
+                                variant: isSelected ? "primary" : ((maCard.containsMouse || isFocused) ? "focus" : "pane")
+                                radius: Styling.radius(4)
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: "transparent"
+                                    border.color: styleCard.isSelected ? Colors.overPrimary : Colors.primary
+                                    border.width: 2
+                                    radius: Styling.radius(4)
+                                    visible: styleCard.isFocused
+                                }
 
                                 MouseArea {
                                     id: maCard
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.updateSetting("transitionStyle", modelData.id)
+                                    onClicked: {
+                                        root.currentSection = 0;
+                                        root.focusedStyleIndex = index;
+                                        root.updateSetting("transitionStyle", modelData.id);
+                                    }
                                     onWheel: (wheel) => root.scrollBy(-wheel.angleDelta.y)
 
                                     RowLayout {
@@ -374,7 +716,7 @@ FocusScope {
                                             text: modelData.icon || Icons.sparkle
                                             font.family: Icons.font
                                             font.pixelSize: 20
-                                            color: styleCard.isSelected ? Colors.overPrimary : Colors.overSurface
+                                            color: styleCard.isSelected ? Colors.overPrimary : (styleCard.isFocused ? Colors.primary : Colors.overSurface)
                                         }
 
                                         ColumnLayout {
@@ -414,23 +756,47 @@ FocusScope {
                     }
                 }
 
-                // Section 2: Easing Curves (Left) & Speed + Display Effects (Right)
+                // Section 1: Easing Curves (Left) & Section 2/3: Speed + Display Effects (Right)
                 RowLayout {
+                    id: sectionEasingAndEffects
                     Layout.fillWidth: true
                     spacing: 14
 
-                    // Easing Curves Column
+                    // Section 1: Easing Curves Column
                     ColumnLayout {
+                        id: sectionEasing
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         spacing: 6
 
-                        Text {
-                            text: "EASING CURVE"
-                            font.family: Config.theme.font
-                            font.pixelSize: Styling.fontSize(-2)
-                            font.weight: Font.Bold
-                            color: Colors.overBackground
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Text {
+                                text: "EASING CURVE"
+                                font.family: Config.theme.font
+                                font.pixelSize: Styling.fontSize(-2)
+                                font.weight: Font.Bold
+                                color: root.currentSection === 1 ? Colors.primary : Colors.overBackground
+                            }
+
+                            StyledRect {
+                                visible: root.currentSection === 1
+                                variant: "focus"
+                                Layout.preferredHeight: 18
+                                Layout.preferredWidth: 54
+                                radius: Styling.radius(2)
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "ACTIVE"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-4)
+                                    font.weight: Font.Bold
+                                    color: Colors.primary
+                                }
+                            }
                         }
 
                         GridLayout {
@@ -445,19 +811,35 @@ FocusScope {
                                 delegate: StyledRect {
                                     id: easeCard
                                     required property var modelData
+                                    required property int index
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 38
-                                    variant: isSelected ? "primary" : (maEase.containsMouse ? "focus" : "pane")
-                                    radius: Styling.radius(4)
 
                                     readonly property bool isSelected: modelData.id === root.currentEasing
+                                    readonly property bool isFocused: root.currentSection === 1 && root.focusedEasingIndex === index
+
+                                    variant: isSelected ? "primary" : ((maEase.containsMouse || isFocused) ? "focus" : "pane")
+                                    radius: Styling.radius(4)
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "transparent"
+                                        border.color: easeCard.isSelected ? Colors.overPrimary : Colors.primary
+                                        border.width: 2
+                                        radius: Styling.radius(4)
+                                        visible: easeCard.isFocused
+                                    }
 
                                     MouseArea {
                                         id: maEase
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: root.updateSetting("easingCurve", modelData.id)
+                                        onClicked: {
+                                            root.currentSection = 1;
+                                            root.focusedEasingIndex = index;
+                                            root.updateSetting("easingCurve", modelData.id);
+                                        }
                                         onWheel: (wheel) => root.scrollBy(-wheel.angleDelta.y)
 
                                         RowLayout {
@@ -503,23 +885,46 @@ FocusScope {
                         }
                     }
 
-                    // Speed & Display Effects Column
+                    // Section 2: Speed & Section 3: Display Effects Column
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         spacing: 8
 
-                        // Duration Pills
+                        // Section 2: Duration Pills
                         ColumnLayout {
+                            id: sectionDuration
                             Layout.fillWidth: true
                             spacing: 6
 
-                            Text {
-                                text: "ANIMATION DURATION"
-                                font.family: Config.theme.font
-                                font.pixelSize: Styling.fontSize(-2)
-                                font.weight: Font.Bold
-                                color: Colors.overBackground
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    text: "ANIMATION DURATION"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-2)
+                                    font.weight: Font.Bold
+                                    color: root.currentSection === 2 ? Colors.primary : Colors.overBackground
+                                }
+
+                                StyledRect {
+                                    visible: root.currentSection === 2
+                                    variant: "focus"
+                                    Layout.preferredHeight: 18
+                                    Layout.preferredWidth: 54
+                                    radius: Styling.radius(2)
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "ACTIVE"
+                                        font.family: Config.theme.font
+                                        font.pixelSize: Styling.fontSize(-4)
+                                        font.weight: Font.Bold
+                                        color: Colors.primary
+                                    }
+                                }
                             }
 
                             RowLayout {
@@ -533,19 +938,35 @@ FocusScope {
                                     delegate: StyledRect {
                                         id: speedCard
                                         required property var modelData
+                                        required property int index
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
-                                        variant: isSelected ? "primary" : (maSpeed.containsMouse ? "focus" : "pane")
-                                        radius: Styling.radius(4)
 
                                         readonly property bool isSelected: Math.abs(root.currentDuration - modelData.value) < 50
+                                        readonly property bool isFocused: root.currentSection === 2 && root.focusedSpeedIndex === index
+
+                                        variant: isSelected ? "primary" : ((maSpeed.containsMouse || isFocused) ? "focus" : "pane")
+                                        radius: Styling.radius(4)
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            color: "transparent"
+                                            border.color: speedCard.isSelected ? Colors.overPrimary : Colors.primary
+                                            border.width: 2
+                                            radius: Styling.radius(4)
+                                            visible: speedCard.isFocused
+                                        }
 
                                         MouseArea {
                                             id: maSpeed
                                             anchors.fill: parent
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.updateSetting("duration", modelData.value)
+                                            onClicked: {
+                                                root.currentSection = 2;
+                                                root.focusedSpeedIndex = index;
+                                                root.updateSetting("duration", modelData.value);
+                                            }
                                             onWheel: (wheel) => root.scrollBy(-wheel.angleDelta.y)
 
                                             RowLayout {
@@ -574,17 +995,50 @@ FocusScope {
                             }
                         }
 
-                        // Display Effects (OLED & Tint)
+                        // Section 3: Display Effects (OLED & Tint)
                         ColumnLayout {
+                            id: sectionEffects
                             Layout.fillWidth: true
                             spacing: 6
 
-                            Text {
-                                text: "DISPLAY & SHADER EFFECTS"
-                                font.family: Config.theme.font
-                                font.pixelSize: Styling.fontSize(-2)
-                                font.weight: Font.Bold
-                                color: Colors.overBackground
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    text: "DISPLAY & SHADER EFFECTS"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-2)
+                                    font.weight: Font.Bold
+                                    color: root.currentSection === 3 ? Colors.primary : Colors.overBackground
+                                }
+
+                                StyledRect {
+                                    visible: root.currentSection === 3
+                                    variant: "focus"
+                                    Layout.preferredHeight: 18
+                                    Layout.preferredWidth: 54
+                                    radius: Styling.radius(2)
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "ACTIVE"
+                                        font.family: Config.theme.font
+                                        font.pixelSize: Styling.fontSize(-4)
+                                        font.weight: Font.Bold
+                                        color: Colors.primary
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                Text {
+                                    visible: root.currentSection === 3
+                                    text: "Enter or Space to toggle"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-4)
+                                    color: Colors.outline
+                                }
                             }
 
                             RowLayout {
@@ -593,17 +1047,32 @@ FocusScope {
 
                                 // OLED Card
                                 StyledRect {
+                                    id: oledCard
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 38
-                                    variant: Config.theme.oledMode ? "primary" : (maOled.containsMouse ? "focus" : "pane")
+                                    readonly property bool isFocused: root.currentSection === 3 && root.focusedEffectIndex === 0
+                                    variant: Config.theme.oledMode ? "primary" : ((maOled.containsMouse || isFocused) ? "focus" : "pane")
                                     radius: Styling.radius(4)
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "transparent"
+                                        border.color: Config.theme.oledMode ? Colors.overPrimary : Colors.primary
+                                        border.width: 2
+                                        radius: Styling.radius(4)
+                                        visible: oledCard.isFocused
+                                    }
 
                                     MouseArea {
                                         id: maOled
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: Config.theme.oledMode = !Config.theme.oledMode
+                                        onClicked: {
+                                            root.currentSection = 3;
+                                            root.focusedEffectIndex = 0;
+                                            Config.theme.oledMode = !Config.theme.oledMode;
+                                        }
                                         onWheel: (wheel) => root.scrollBy(-wheel.angleDelta.y)
 
                                         RowLayout {
@@ -635,10 +1104,20 @@ FocusScope {
                                 StyledRect {
                                     id: tintRect
                                     readonly property bool isTinted: GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.tintEnabled
+                                    readonly property bool isFocused: root.currentSection === 3 && root.focusedEffectIndex === 1
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 38
-                                    variant: isTinted ? "primary" : (maTint.containsMouse ? "focus" : "pane")
+                                    variant: isTinted ? "primary" : ((maTint.containsMouse || isFocused) ? "focus" : "pane")
                                     radius: Styling.radius(4)
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "transparent"
+                                        border.color: tintRect.isTinted ? Colors.overPrimary : Colors.primary
+                                        border.width: 2
+                                        radius: Styling.radius(4)
+                                        visible: tintRect.isFocused
+                                    }
 
                                     MouseArea {
                                         id: maTint
@@ -646,6 +1125,8 @@ FocusScope {
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
+                                            root.currentSection = 3;
+                                            root.focusedEffectIndex = 1;
                                             if (GlobalStates.wallpaperManager) {
                                                 GlobalStates.wallpaperManager.tintEnabled = !GlobalStates.wallpaperManager.tintEnabled;
                                             }
@@ -681,17 +1162,40 @@ FocusScope {
                     }
                 }
 
-                // Section 3: Material You Schemes
+                // Section 4: Material You Schemes
                 ColumnLayout {
+                    id: sectionSchemes
                     Layout.fillWidth: true
                     spacing: 6
 
-                    Text {
-                        text: "MATERIAL YOU DYNAMIC SCHEMES"
-                        font.family: Config.theme.font
-                        font.pixelSize: Styling.fontSize(-2)
-                        font.weight: Font.Bold
-                        color: Colors.overBackground
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Text {
+                            text: "MATERIAL YOU DYNAMIC SCHEMES"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-2)
+                            font.weight: Font.Bold
+                            color: root.currentSection === 4 ? Colors.primary : Colors.overBackground
+                        }
+
+                        StyledRect {
+                            visible: root.currentSection === 4
+                            variant: "focus"
+                            Layout.preferredHeight: 18
+                            Layout.preferredWidth: 54
+                            radius: Styling.radius(2)
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "ACTIVE"
+                                font.family: Config.theme.font
+                                font.pixelSize: Styling.fontSize(-4)
+                                font.weight: Font.Bold
+                                color: Colors.primary
+                            }
+                        }
                     }
 
                     Flow {
@@ -705,15 +1209,27 @@ FocusScope {
                             delegate: StyledRect {
                                 id: schemeCard
                                 required property var modelData
+                                required property int index
                                 width: Math.max(115, labelText.implicitWidth + (isSelected ? 32 : 20))
                                 height: 34
-                                variant: isSelected ? "primary" : (maScheme.containsMouse ? "focus" : "pane")
-                                radius: Styling.radius(4)
 
                                 readonly property bool isSelected: {
                                     if (!GlobalStates.wallpaperManager) return false;
                                     return !GlobalStates.wallpaperManager.activeColorPreset &&
                                            GlobalStates.wallpaperManager.currentMatugenScheme === modelData.id;
+                                }
+                                readonly property bool isFocused: root.currentSection === 4 && root.focusedSchemeIndex === index
+
+                                variant: isSelected ? "primary" : ((maScheme.containsMouse || isFocused) ? "focus" : "pane")
+                                radius: Styling.radius(4)
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: "transparent"
+                                    border.color: schemeCard.isSelected ? Colors.overPrimary : Colors.primary
+                                    border.width: 2
+                                    radius: Styling.radius(4)
+                                    visible: schemeCard.isFocused
                                 }
 
                                 MouseArea {
@@ -722,6 +1238,8 @@ FocusScope {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
+                                        root.currentSection = 4;
+                                        root.focusedSchemeIndex = index;
                                         if (GlobalStates.wallpaperManager) {
                                             GlobalStates.wallpaperManager.setMatugenScheme(modelData.id);
                                         }
@@ -755,18 +1273,41 @@ FocusScope {
                     }
                 }
 
-                // Section 4: Color Presets
+                // Section 5: Color Presets
                 ColumnLayout {
+                    id: sectionPresets
                     visible: root.presets && root.presets.length > 0
                     Layout.fillWidth: true
                     spacing: 6
 
-                    Text {
-                        text: "COLOR PALETTE PRESETS"
-                        font.family: Config.theme.font
-                        font.pixelSize: Styling.fontSize(-2)
-                        font.weight: Font.Bold
-                        color: Colors.overBackground
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Text {
+                            text: "COLOR PALETTE PRESETS"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-2)
+                            font.weight: Font.Bold
+                            color: root.currentSection === 5 ? Colors.primary : Colors.overBackground
+                        }
+
+                        StyledRect {
+                            visible: root.currentSection === 5
+                            variant: "focus"
+                            Layout.preferredHeight: 18
+                            Layout.preferredWidth: 54
+                            radius: Styling.radius(2)
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "ACTIVE"
+                                font.family: Config.theme.font
+                                font.pixelSize: Styling.fontSize(-4)
+                                font.weight: Font.Bold
+                                color: Colors.primary
+                            }
+                        }
                     }
 
                     Flow {
@@ -780,14 +1321,26 @@ FocusScope {
                             delegate: StyledRect {
                                 id: presetCard
                                 required property var modelData
+                                required property int index
                                 width: Math.max(100, presetLabel.implicitWidth + (isSelected ? 32 : 20))
                                 height: 34
-                                variant: isSelected ? "primary" : (maPreset.containsMouse ? "focus" : "pane")
-                                radius: Styling.radius(4)
 
                                 readonly property bool isSelected: {
                                     if (!GlobalStates.wallpaperManager) return false;
                                     return GlobalStates.wallpaperManager.activeColorPreset === String(modelData);
+                                }
+                                readonly property bool isFocused: root.currentSection === 5 && root.focusedPresetIndex === index
+
+                                variant: isSelected ? "primary" : ((maPreset.containsMouse || isFocused) ? "focus" : "pane")
+                                radius: Styling.radius(4)
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: "transparent"
+                                    border.color: presetCard.isSelected ? Colors.overPrimary : Colors.primary
+                                    border.width: 2
+                                    radius: Styling.radius(4)
+                                    visible: presetCard.isFocused
                                 }
 
                                 MouseArea {
@@ -796,6 +1349,8 @@ FocusScope {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
+                                        root.currentSection = 5;
+                                        root.focusedPresetIndex = index;
                                         if (GlobalStates.wallpaperManager) {
                                             GlobalStates.wallpaperManager.setColorPreset(String(modelData));
                                         }
