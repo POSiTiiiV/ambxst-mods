@@ -8,7 +8,7 @@ A curated collection of declarative modifications and shell enhancements for [Am
 
 | Package | Name | Description | Status |
 | :--- | :--- | :--- | :--- |
-| [`wallpaper-transitions`](packages/wallpaper-transitions) | **Wallpaper Transitions** | Smooth animated wallpaper transitions (Crossfade, Iris In/Out, Slides, Zoom & Fade, Pulse) with a dedicated in-tab settings panel. | ✅ Ready (`v1.0.0`) |
+| [`wallpaper-transitions`](packages/wallpaper-transitions) | **Wallpaper Transitions** | Smooth animated wallpaper transitions (Crossfade, Iris In/Out, Slides, Zoom & Fade, Pulse), dedicated in-tab settings panel, and comprehensive keyboard navigation. | ✅ Ready (`v1.0.3`) |
 
 ---
 

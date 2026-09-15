@@ -65,16 +65,50 @@ ambxst reload
 
 ---
 
+## ⌨️ Keyboard Navigation & Shortcuts
+
+This mod provides end-to-end keyboard accessibility across both the wallpaper picker and the settings panel:
+
+### 1. In the Wallpaper Picker (`SUPER + ,`)
+
+- **<kbd>Tab</kbd> (Forward Cycle)**:
+  `Search Bar` → `Settings Icon (⚙)` → `Monitor Toggle (eDP-1)` → `Filter Bar (Images / Videos / GIFs / Folders)` → `Search Bar`
+- **<kbd>Shift + Tab</kbd> (Reverse Cycle)**:
+  `Search Bar` → `Filter Bar` → `Monitor Toggle` → `Settings Icon` → `Search Bar`
+- **While on Search Bar**:
+  - Typing immediately filters wallpapers.
+  - Arrow keys (<kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd>) navigate the wallpaper grid.
+  - <kbd>Enter</kbd> applies the selected wallpaper.
+- **While on Settings Icon (⚙)**:
+  - <kbd>Enter</kbd> or <kbd>Space</kbd> opens the Wallpaper & Transition Settings view.
+- **<kbd>Esc</kbd>**: Closes the dashboard.
+
+### 2. In the Wallpaper & Transition Settings Panel
+
+- **<kbd>Tab</kbd> / <kbd>Shift + Tab</kbd>**:
+  Cycles through the major section headings in sequence, automatically scrolling the active section into view with an `ACTIVE` badge and accent highlight:
+  1. `TRANSITION STYLE`
+  2. `EASING CURVE`
+  3. `ANIMATION DURATION`
+  4. `DISPLAY & SHADER EFFECTS` (OLED & Tint)
+  5. `MATERIAL YOU DYNAMIC SCHEMES`
+  6. `COLOR PALETTE PRESETS` (if custom presets exist)
+  7. `Back to Wallpapers` button
+- **Arrow Keys (<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>)**:
+  Scoped to the active section. Arrow navigation live-previews and selects options immediately without scrolling away from your view.
+- **<kbd>Space</kbd> / <kbd>Enter</kbd>**:
+  - In *Display & Shader Effects*: Toggles OLED Pitch Black mode or Wallpaper Tint shader.
+  - In *Back to Wallpapers*: Returns to the wallpaper grid.
+- **<kbd>Esc</kbd>**:
+  Instantly exits settings and returns to the wallpaper picker, automatically restoring active keyboard focus to the search bar so typing and arrows work immediately.
+- **<kbd>PageUp</kbd> / <kbd>PageDown</kbd>**: Fast scroll view.
+
+---
+
 ## 🛠️ Usage
 
 ### In Dashboard Wallpaper Tab (`SUPER + ,`)
-Click the **Settings** button (`⚙` gear icon) in the top-bar next to the search input. The view switches to the dedicated **Wallpaper & Transition Settings** panel where you can choose transition animations, speed, Material You schemes, display shaders, and color presets.
-
-Navigate using mouse scroll, touchpad, the vertical scrollbar, or keyboard:
-- <kbd>↑</kbd> / <kbd>↓</kbd>: Scroll view
-- <kbd>←</kbd> / <kbd>→</kbd>: Cycle transition styles
-- <kbd>PageUp</kbd> / <kbd>PageDown</kbd>: Fast scroll
-- <kbd>Esc</kbd>: Return to wallpaper picker
+Click the **Settings** button (`⚙` gear icon) in the top-bar next to the search input, or navigate to it using <kbd>Tab</kbd> and press <kbd>Enter</kbd>.
 
 ### In Ambxst Settings (`SUPER + S` → Mods → Wallpaper Transitions)
 Click the **`[ ⚙ Open Wallpaper & Transition Settings ]`** button to open the configuration panel directly.
