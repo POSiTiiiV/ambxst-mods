@@ -1,17 +1,25 @@
 # Wallpaper Transitions
 
-A native modification package for [Ambxst](https://github.com/Axenide/Ambxst) introducing smooth, configurable animated transitions when switching wallpapers, complete with a dedicated in-tab configuration panel.
+A native modification package for [Ambxst](https://github.com/Axenide/Ambxst) introducing smooth, configurable animated transitions when switching wallpapers, random wallpaper shuffle actions, and automated periodic wallpaper rotation, complete with an in-tab Advanced Settings panel.
 
 ---
 
 ## ✨ Features
 
-- **Dedicated Wallpaper & Transition Settings View**:
-  - Accessible via the `[ ⚙ ]` gear button in the Wallpaper Picker top bar (`SUPER + ,`).
-  - Replaces cramped dropdowns with a dedicated, spacious, and scrollable configuration panel.
-  - Consolidates all wallpaper controls: Transition style, easing curve, animation speed, Material You dynamic schemes, color palette presets, OLED pitch-black mode, live wallpaper tint shader, and light/dark theme toggle.
-  - Smooth navigation with a prominent **"Back to Wallpapers"** button and keyboard <kbd>Esc</kbd> support.
-- **10 Transition Styles**:
+- **Clean Top Bar with Instant Toggles**:
+  - **Search Bar**: Instant filtering across images, gifs, and video wallpapers.
+  - **Per-Screen Monitor Selector**: Target a specific monitor (`eDP-1`, `HDMI-A-1`) or apply globally.
+  - **OLED Mode Toggle**: True pitch-black mode for OLED displays kept accessible right on the bar.
+  - **Tint Mode Toggle**: Dynamic shader tinting kept accessible right on the bar.
+  - **Day / Night Toggle**: Instant switch between Light and Dark themes directly from the wallpaper picker.
+  - **Random Shuffle Button (``)**: Click to immediately transition to a random wallpaper from your collection.
+  - **Advanced Settings Button (`⚙`)**: Opens the dedicated in-tab configuration panel.
+- **Randomizer & Automation**:
+  - **Instant Wallpaper Shuffle**: Shuffle button in both the top bar and Advanced Settings.
+  - **CLI / IPC Command**: Trigger a random wallpaper anytime via `ambxst run wallpaper-random`.
+  - **Hyprland / Compositor Keybind Ready**: Bind any key to switch wallpapers randomly.
+  - **Periodic Wallpaper Rotation**: Automatic background rotation with configurable intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), persisted across restarts.
+- **10 Animated Transition Styles**:
   - **Crossfade (Default)**: Smooth, continuous opacity dissolve between wallpapers without black flashes.
   - **Circle Expand (Iris Out)**: Circular iris expands smoothly outward from screen center to the corners.
   - **Circle Shrink (Iris In)**: Circular iris contracts inward toward the screen center, revealing the incoming wallpaper.
@@ -30,8 +38,10 @@ A native modification package for [Ambxst](https://github.com/Axenide/Ambxst) in
   - **Quadratic**: Soft, gentle deceleration curve.
   - **Linear**: Constant, unvaried speed from start to end.
 - **Quick Duration Presets**: Fast (`200ms`), Normal (`400ms`), Smooth (`700ms`), Cinematic (`1200ms`).
-- **Native GUI Settings**: Interactive launcher button in **Ambxst Settings → Mods → Wallpaper Transitions**.
-- **Live Hot-Reload**: Settings update in real-time without restarting the Ambxst shell.
+- **Ambxst 1.3.6+ Modern Stack Compatibility**:
+  - Native `QtMultimedia` `VideoWallpaper` integration for video and GIF wallpapers.
+  - Native Niri overview blur pass support.
+  - High-quality image downscaling with `mipmap: true`.
 - **VRAM & Memory Efficient**: Dual-buffer transition engine unloads previous wallpaper textures once transitions finish, preventing memory leaks on high-resolution setups.
 
 ---
@@ -65,53 +75,59 @@ ambxst reload
 
 ---
 
-## ⌨️ Keyboard Navigation & Shortcuts
+## ⌨️ Shortcuts & Commands
 
-This mod provides end-to-end keyboard accessibility across both the wallpaper picker and the settings panel:
+### Random Wallpaper Keybind
 
-### 1. In the Wallpaper Picker (`SUPER + ,`)
+To change to a random wallpaper anytime using a keybinding, add this to your `~/.config/hypr/hyprland.conf`:
+
+```ini
+bind = $mainMod, W, exec, ambxst run wallpaper-random
+```
+
+Or run directly in your terminal:
+
+```bash
+ambxst run wallpaper-random
+```
+
+### Keyboard Navigation
+
+#### 1. In the Wallpaper Picker (`SUPER + ,`)
 
 - **<kbd>Tab</kbd> (Forward Cycle)**:
-  `Search Bar` → `Settings Icon (⚙)` → `Monitor Toggle (eDP-1)` → `Filter Bar (Images / Videos / GIFs / Folders)` → `Search Bar`
+  `Search Bar` → `Monitor Toggle (eDP-1)` → `OLED Mode` → `Tint Mode` → `Day/Night Toggle` → `Shuffle Button ()` → `Settings Button (⚙)` → `Filter Bar` → `Search Bar`
 - **<kbd>Shift + Tab</kbd> (Reverse Cycle)**:
-  `Search Bar` → `Filter Bar` → `Monitor Toggle` → `Settings Icon` → `Search Bar`
-- **While on Search Bar**:
-  - Typing immediately filters wallpapers.
-  - Arrow keys (<kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd>) navigate the wallpaper grid.
+  Traverses backwards through all controls.
+- **On Search Bar**:
+  - Typing filters wallpapers instantly.
+  - Arrow keys (<kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd>) navigate the grid.
   - <kbd>Enter</kbd> applies the selected wallpaper.
-- **While on Settings Icon (⚙)**:
-  - <kbd>Enter</kbd> or <kbd>Space</kbd> opens the Wallpaper & Transition Settings view.
-- **<kbd>Esc</kbd>**: Closes the dashboard.
+- **On Day/Night Toggle**:
+  - <kbd>Enter</kbd> or <kbd>Space</kbd> flips light / dark mode.
+- **On Shuffle Button ()**:
+  - <kbd>Enter</kbd> or <kbd>Space</kbd> picks a random wallpaper.
+- **On Settings Button (⚙)**:
+  - <kbd>Enter</kbd> or <kbd>Space</kbd> opens Advanced Settings.
 
-### 2. In the Wallpaper & Transition Settings Panel
+#### 2. In Advanced Settings Panel
 
 - **<kbd>Tab</kbd> / <kbd>Shift + Tab</kbd>**:
-  Cycles through the major section headings in sequence, automatically scrolling the active section into view with an `ACTIVE` badge and accent highlight:
+  Cycles through the major sections with live indicator badge:
   1. `TRANSITION STYLE`
   2. `EASING CURVE`
   3. `ANIMATION DURATION`
-  4. `DISPLAY & SHADER EFFECTS` (OLED & Tint)
-  5. `MATERIAL YOU DYNAMIC SCHEMES`
-  6. `COLOR PALETTE PRESETS` (if custom presets exist)
-  7. `Back to Wallpapers` button
+  4. `AUTOMATION & ROTATION` (Shuffle Now & Periodic Timer)
+  5. `DISPLAY & SHADER EFFECTS` (OLED & Tint)
+  6. `MATERIAL YOU COLOR SCHEMES`
+  7. `COLOR PRESETS` (if available)
+  8. `Back to Wallpapers`
 - **Arrow Keys (<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>)**:
-  Scoped to the active section. Arrow navigation live-previews and selects options immediately without scrolling away from your view.
+  Navigates items within the active section.
 - **<kbd>Space</kbd> / <kbd>Enter</kbd>**:
-  - In *Display & Shader Effects*: Toggles OLED Pitch Black mode or Wallpaper Tint shader.
-  - In *Back to Wallpapers*: Returns to the wallpaper grid.
+  Selects options, triggers random shuffle, or toggles auto-rotation.
 - **<kbd>Esc</kbd>**:
-  Instantly exits settings and returns to the wallpaper picker, automatically restoring active keyboard focus to the search bar so typing and arrows work immediately.
-- **<kbd>PageUp</kbd> / <kbd>PageDown</kbd>**: Fast scroll view.
-
----
-
-## 🛠️ Usage
-
-### In Dashboard Wallpaper Tab (`SUPER + ,`)
-Click the **Settings** button (`⚙` gear icon) in the top-bar next to the search input, or navigate to it using <kbd>Tab</kbd> and press <kbd>Enter</kbd>.
-
-### In Ambxst Settings (`SUPER + S` → Mods → Wallpaper Transitions)
-Click the **`[ ⚙ Open Wallpaper & Transition Settings ]`** button to open the configuration panel directly.
+  Instantly returns to the wallpaper picker and refocuses the search bar.
 
 ---
 

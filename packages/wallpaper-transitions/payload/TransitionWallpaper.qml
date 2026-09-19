@@ -26,8 +26,6 @@ Item {
     readonly property string modId: "positive.wallpaper-transitions"
     readonly property bool tintEnabled: wallpaperManager ? wallpaperManager.tintEnabled : false
     readonly property string currentScreenName: wallpaperManager ? wallpaperManager.currentScreenName : ""
-    readonly property string mpvSocket: wallpaperManager ? wallpaperManager.mpvSocket : ""
-    readonly property string mpvShaderPath: wallpaperManager ? wallpaperManager.mpvShaderPath : ""
 
     clip: true
 
@@ -105,13 +103,6 @@ Item {
         recursive: false
     }
 
-    // Process to kill mpvpaper when switching to static image
-    Process {
-        id: killMpvpaperProcess
-        running: false
-        command: mpvSocket ? ["pkill", "-f", mpvSocket] : ["true"]
-    }
-
     // Circle Mask Engine (Iris Transitions)
     readonly property real maxCircleRadius: Math.ceil(Math.hypot(root.width, root.height) / 2) + 20
     property real circleRadius: 0
@@ -142,117 +133,127 @@ Item {
         visible: false
     }
 
-    // Two Image Layer Slots for seamless transitions
-    // Note: No anchors on layerRoot so that x/y position animations work!
-    component WallpaperLayer: Item {
-        id: layerRoot
-        width: root.width
-        height: root.height
-        property string imageSource: ""
-        readonly property int status: rawImg.status
+    // Container for all layers, which can be blurred on Niri overview
+    Item {
+        id: layersContainer
+        anchors.fill: parent
 
-        Image {
-            id: rawImg
+        // Two Image Layer Slots for seamless transitions
+        // Note: No anchors on layerRoot so that x/y position animations work!
+        component WallpaperLayer: Item {
+            id: layerRoot
+            width: root.width
+            height: root.height
+            property string imageSource: ""
+            readonly property int status: rawImg.status
+
+            Image {
+                id: rawImg
+                anchors.fill: parent
+                source: layerRoot.imageSource ? "file://" + layerRoot.imageSource : ""
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                smooth: true
+                mipmap: true
+                sourceSize.width: root.wallpaperManager ? root.wallpaperManager.width : root.width
+                sourceSize.height: root.wallpaperManager ? root.wallpaperManager.height : root.height
+                layer.enabled: root.tintEnabled
+                layer.effect: ShaderEffect {
+                    property var paletteTexture: paletteTextureSource
+                    property real paletteSize: root.optimizedPalette.length
+                    property real texWidth: rawImg.width
+                    property real texHeight: rawImg.height
+
+                    vertexShader: "palette.vert.qsb"
+                    fragmentShader: "palette.frag.qsb"
+                }
+            }
+        }
+
+        WallpaperLayer {
+            id: slot0
+            z: root.activeSlot === 0 ? 1 : 0
+            opacity: 1.0
+            x: 0
+            y: 0
+            scale: 1.0
+            layer.enabled: root.isTransitioning && (root.transitionStyle === "circleOut" || root.transitionStyle === "circleIn") && root.activeCircleSlot === 0
+            layer.effect: MultiEffect {
+                maskEnabled: true
+                maskSource: circleMaskSource
+                maskInverted: root.circleMaskInverted
+                maskThresholdMin: 0.5
+                maskSpreadAtMin: 1.0
+            }
+        }
+
+        WallpaperLayer {
+            id: slot1
+            z: root.activeSlot === 1 ? 1 : 0
+            opacity: 0.0
+            x: 0
+            y: 0
+            scale: 1.0
+            layer.enabled: root.isTransitioning && (root.transitionStyle === "circleOut" || root.transitionStyle === "circleIn") && root.activeCircleSlot === 1
+            layer.effect: MultiEffect {
+                maskEnabled: true
+                maskSource: circleMaskSource
+                maskInverted: root.circleMaskInverted
+                maskThresholdMin: 0.5
+                maskSpreadAtMin: 1.0
+            }
+        }
+
+        // Native QtMultimedia Video & GIF Wallpaper Player (Ambxst 1.3.6+)
+        Loader {
+            id: videoLoader
             anchors.fill: parent
-            source: layerRoot.imageSource ? "file://" + layerRoot.imageSource : ""
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            smooth: true
-            mipmap: false
-            sourceSize.width: root.wallpaperManager ? root.wallpaperManager.width : root.width
-            sourceSize.height: root.wallpaperManager ? root.wallpaperManager.height : root.height
-            layer.enabled: root.tintEnabled
-            layer.effect: ShaderEffect {
-                property var paletteTexture: paletteTextureSource
-                property real paletteSize: root.optimizedPalette.length
-                property real texWidth: rawImg.width
-                property real texHeight: rawImg.height
+            active: false
+            z: 2
+            sourceComponent: Component {
+                VideoWallpaper {
+                    id: videoWallpaperChild
+                    sourceFile: root.source
+                    tint: root.tintEnabled
+                    onRequestVideoSync: {
+                        if (root.wallpaperManager && root.wallpaperManager.requestVideoSync)
+                            root.wallpaperManager.requestVideoSync();
+                    }
 
-                vertexShader: "palette.vert.qsb"
-                fragmentShader: "palette.frag.qsb"
+                    Component.onCompleted: {
+                        if (root.wallpaperManager)
+                            root.wallpaperManager.activeVideo = videoWallpaperChild;
+                        root.notifyShown();
+                    }
+                    Component.onDestruction: {
+                        if (root.wallpaperManager && root.wallpaperManager.activeVideo === videoWallpaperChild)
+                            root.wallpaperManager.activeVideo = null;
+                    }
+                }
             }
         }
     }
 
-    WallpaperLayer {
-        id: slot0
-        z: root.activeSlot === 0 ? 1 : 0
-        opacity: 1.0
-        x: 0
-        y: 0
-        scale: 1.0
-        layer.enabled: root.isTransitioning && (root.transitionStyle === "circleOut" || root.transitionStyle === "circleIn") && root.activeCircleSlot === 0
-        layer.effect: MultiEffect {
-            maskEnabled: true
-            maskSource: circleMaskSource
-            maskInverted: root.circleMaskInverted
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 1.0
-        }
-    }
-
-    WallpaperLayer {
-        id: slot1
-        z: root.activeSlot === 1 ? 1 : 0
-        opacity: 0.0
-        x: 0
-        y: 0
-        scale: 1.0
-        layer.enabled: root.isTransitioning && (root.transitionStyle === "circleOut" || root.transitionStyle === "circleIn") && root.activeCircleSlot === 1
-        layer.effect: MultiEffect {
-            maskEnabled: true
-            maskSource: circleMaskSource
-            maskInverted: root.circleMaskInverted
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 1.0
-        }
-    }
-
-    // Video loader for mpvpaper
+    // Niri native overview blur pass (Ambxst 1.3.6+)
     Loader {
-        id: mpvLoader
         anchors.fill: parent
-        active: false
-        z: 2
+        active: root.wallpaperManager ? root.wallpaperManager.overviewBlurPossible : (AxctlService.compositorName === "niri")
         sourceComponent: Component {
-            Item {
-                id: mpvItem
-                property string sourceFile: ""
-                property string scriptPath: decodeURIComponent(Qt.resolvedUrl("mpvpaper.sh").toString().replace("file://", ""))
+            MultiEffect {
+                anchors.fill: parent
+                source: layersContainer
+                autoPaddingEnabled: false
+                blurEnabled: (root.wallpaperManager && root.wallpaperManager.overviewBlurActive) || blur > 0
+                blurMax: 64
+                blur: (root.wallpaperManager && root.wallpaperManager.overviewBlurActive) ? 1.0 : 0.0
+                visible: true
 
-                Timer {
-                    id: mpvpaperRestartTimer
-                    interval: 100
-                    onTriggered: {
-                        if (sourceFile) {
-                            mpvpaperProcess.running = true;
-                            if (root.wallpaperManager && root.wallpaperManager.requestVideoSync)
-                                root.wallpaperManager.requestVideoSync();
-                        }
+                Behavior on blur {
+                    enabled: Config.animDuration > 0
+                    NumberAnimation {
+                        duration: Config.animDuration
+                        easing.type: Easing.OutCubic
                     }
-                }
-
-                onSourceFileChanged: {
-                    if (sourceFile) {
-                        mpvpaperProcess.running = false;
-                        mpvpaperRestartTimer.restart();
-                    }
-                }
-
-                Component.onCompleted: {
-                    if (sourceFile) {
-                        mpvpaperProcess.running = true;
-                        root.notifyShown();
-                        if (root.wallpaperManager && root.wallpaperManager.requestVideoSync)
-                            root.wallpaperManager.requestVideoSync();
-                    }
-                }
-
-                Process {
-                    id: mpvpaperProcess
-                    running: false
-                    command: sourceFile && root.currentScreenName ?
-                        ["bash", scriptPath, sourceFile, (root.tintEnabled ? root.mpvShaderPath : ""), root.currentScreenName] : []
                 }
             }
         }
@@ -304,17 +305,13 @@ Item {
             slot1.imageSource = "";
             activeSource = source;
             previousSource = source;
-            mpvLoader.active = true;
-            if (mpvLoader.item) {
-                mpvLoader.item.sourceFile = source;
-            }
+            videoLoader.active = true;
             return;
         }
 
         // Static image
-        if (mpvLoader.active) {
-            mpvLoader.active = false;
-            killMpvpaperProcess.running = true;
+        if (videoLoader.active) {
+            videoLoader.active = false;
         }
 
         if (activeSource === "") {

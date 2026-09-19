@@ -1,16 +1,18 @@
 diff --git a/modules/globals/GlobalStates.qml b/modules/globals/GlobalStates.qml
-index 528a20b3..4e032db7 100644
+index eb6e9ccd..aa6ef2d3 100644
 --- a/modules/globals/GlobalStates.qml
 +++ b/modules/globals/GlobalStates.qml
-@@ -145,6 +145,38 @@ Singleton {
+@@ -190,6 +190,79 @@ Singleton {
          wallpaperSelectedIndex = -1;
      }
  
-+    // Wallpaper Transitions State (persisted via StateService)
++    // Wallpaper Transitions & Automation State (persisted via StateService)
 +    property string wallpaperTransitionStyle: StateService.get("wallpaperTransitionStyle", "crossfade")
 +    property string wallpaperTransitionEasing: StateService.get("wallpaperTransitionEasing", "cubic")
 +    property int wallpaperTransitionDuration: StateService.get("wallpaperTransitionDuration", 400)
 +    property bool wallpapersTabShowSettings: false
++    property bool wallpaperPeriodicEnabled: StateService.get("wallpaperPeriodicEnabled", false)
++    property int wallpaperPeriodicInterval: StateService.get("wallpaperPeriodicInterval", 15)
 +
 +    function setWallpaperTransitionStyle(style) {
 +        wallpaperTransitionStyle = style;
@@ -27,6 +29,43 @@ index 528a20b3..4e032db7 100644
 +        StateService.set("wallpaperTransitionDuration", duration);
 +    }
 +
++    function setWallpaperPeriodicEnabled(enabled) {
++        wallpaperPeriodicEnabled = enabled;
++        StateService.set("wallpaperPeriodicEnabled", enabled);
++    }
++
++    function setWallpaperPeriodicInterval(interval) {
++        wallpaperPeriodicInterval = interval;
++        StateService.set("wallpaperPeriodicInterval", interval);
++    }
++
++    function triggerRandomWallpaper() {
++        if (!wallpaperManager || !wallpaperManager.wallpaperPaths || wallpaperManager.wallpaperPaths.length === 0) return;
++        let paths = wallpaperManager.wallpaperPaths;
++        if (paths.length <= 1) {
++            wallpaperManager.setWallpaperByIndex(0);
++            wallpaperSelectedIndex = 0;
++            return;
++        }
++        let cur = wallpaperManager.currentIndex >= 0 ? wallpaperManager.currentIndex : wallpaperSelectedIndex;
++        let next = Math.floor(Math.random() * paths.length);
++        if (next === cur) {
++            next = (next + 1) % paths.length;
++        }
++        wallpaperManager.setWallpaperByIndex(next);
++        wallpaperSelectedIndex = next;
++    }
++
++    Timer {
++        id: wallpaperPeriodicTimer
++        interval: Math.max(1, root.wallpaperPeriodicInterval) * 60000
++        repeat: true
++        running: root.wallpaperPeriodicEnabled
++        onTriggered: {
++            root.triggerRandomWallpaper();
++        }
++    }
++
 +    Connections {
 +        target: StateService
 +        function onInitializedChanged() {
@@ -34,6 +73,8 @@ index 528a20b3..4e032db7 100644
 +                root.wallpaperTransitionStyle = StateService.get("wallpaperTransitionStyle", "crossfade");
 +                root.wallpaperTransitionEasing = StateService.get("wallpaperTransitionEasing", "cubic");
 +                root.wallpaperTransitionDuration = StateService.get("wallpaperTransitionDuration", 400);
++                root.wallpaperPeriodicEnabled = StateService.get("wallpaperPeriodicEnabled", false);
++                root.wallpaperPeriodicInterval = StateService.get("wallpaperPeriodicInterval", 15);
 +            }
 +        }
 +    }
@@ -41,8 +82,23 @@ index 528a20b3..4e032db7 100644
      function getNotchOpen(screenName) {
          let visibilities = Visibilities.getForScreen(screenName);
          return visibilities.launcher || visibilities.dashboard || visibilities.overview || visibilities.presets;
+diff --git a/modules/services/GlobalShortcuts.qml b/modules/services/GlobalShortcuts.qml
+index b1aa3be4..8b04f91b 100644
+--- a/modules/services/GlobalShortcuts.qml
++++ b/modules/services/GlobalShortcuts.qml
+@@ -50,6 +50,10 @@ QtObject {
+             case "assistant": toggleAssistant(); break;
+             case "dashboard-widgets": toggleDashboardTab(0); break;
+             case "dashboard-wallpapers": toggleDashboardTab(1); break;
++            case "wallpaper-random":
++            case "random-wallpaper":
++                GlobalStates.triggerRandomWallpaper();
++                break;
+             case "dashboard-kanban": toggleDashboardTab(2); break;
+             case "dashboard-assistant": toggleAssistant(); break;
+             case "dashboard-controls": toggleSettings(); break;
 diff --git a/modules/widgets/dashboard/controls/ModsPanel.qml b/modules/widgets/dashboard/controls/ModsPanel.qml
-index 31b40ca3..60bccaa7 100644
+index 66cbd27d..4886cc80 100644
 --- a/modules/widgets/dashboard/controls/ModsPanel.qml
 +++ b/modules/widgets/dashboard/controls/ModsPanel.qml
 @@ -7,6 +7,7 @@ import qs.config
@@ -53,7 +109,7 @@ index 31b40ca3..60bccaa7 100644
  
  Item {
      id: root
-@@ -869,6 +870,47 @@ Item {
+@@ -919,6 +920,47 @@ Item {
                          wrapMode: Text.Wrap
                      }
  
@@ -102,10 +158,10 @@ index 31b40ca3..60bccaa7 100644
                          visible: (root.selectedMod?.error ?? "") !== ""
                              || (root.selectedMod?.compatibilityError ?? "") !== ""
 diff --git a/modules/widgets/dashboard/wallpapers/Wallpaper.qml b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
-index cdf136e7..ca988608 100644
+index 099acb04..7e28b63e 100644
 --- a/modules/widgets/dashboard/wallpapers/Wallpaper.qml
 +++ b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
-@@ -1230,10 +1230,11 @@ PanelWindow {
+@@ -1050,10 +1050,11 @@ PanelWindow {
              }
          }
  
@@ -119,7 +175,7 @@ index cdf136e7..ca988608 100644
      }
  
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index e2007a50..a341b55b 100644
+index 195fd45f..60b3a68d 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -11,6 +11,7 @@ import qs.config
@@ -149,48 +205,34 @@ index e2007a50..a341b55b 100644
      function togglePerScreenMode() {
          if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
          
-@@ -50,33 +63,20 @@ FocusScope {
-     readonly property int gridColumns: 7
-     readonly property int wallpaperMargin: 4
- 
--    // Array de elementos focusables para navegación cíclica
-+    // Array de elementos focusables para navegación cíclica: Search -> Settings Button -> eDP Monitor -> Filters
-     property var focusableElements: [
+@@ -74,9 +87,24 @@ FocusScope {
+             }
+         },
          {
--            id: "perScreenCheckbox",
--            focusFunc: function () {
--                perScreenCheckboxContainer.keyboardNavigationActive = true;
--                perScreenCheckbox.forceActiveFocus();
--            }
--        },
--        {
--            id: "oledCheckbox",
--            focusFunc: function () {
--                oledCheckboxContainer.keyboardNavigationActive = true;
--                oledCheckbox.forceActiveFocus();
--            }
--        },
--        {
--            id: "tintCheckbox",
+-            id: "schemeSelector",
++            id: "dayNightToggle",
++            focusFunc: function () {
++                dayNightContainer.keyboardNavigationActive = true;
++                dayNightBtn.forceActiveFocus();
++            }
++        },
++        {
++            id: "randomButton",
++            focusFunc: function () {
++                randomBtnContainer.keyboardNavigationActive = true;
++                randomBtn.forceActiveFocus();
++            }
++        },
++        {
 +            id: "settingsButton",
              focusFunc: function () {
--                tintCheckboxContainer.keyboardNavigationActive = true;
--                tintCheckbox.forceActiveFocus();
+-                schemeSelector.openAndFocus();
 +                settingsBtnContainer.keyboardNavigationActive = true;
 +                settingsBtn.forceActiveFocus();
              }
          },
          {
--            id: "schemeSelector",
-+            id: "perScreenCheckbox",
-             focusFunc: function () {
--                schemeSelector.openAndFocus();
-+                perScreenCheckboxContainer.keyboardNavigationActive = true;
-+                perScreenCheckbox.forceActiveFocus();
-             }
-         },
-         {
-@@ -91,7 +91,12 @@ FocusScope {
+@@ -91,7 +119,12 @@ FocusScope {
  
      // Función para enfocar el campo de búsqueda
      function focusSearch() {
@@ -203,7 +245,7 @@ index e2007a50..a341b55b 100644
          wallpaperSearchInput.focusInput();
  
          // Restaurar índice válido si está en -1 y hay wallpapers
-@@ -128,8 +133,11 @@ FocusScope {
+@@ -128,8 +161,11 @@ FocusScope {
  
      // Función para navegar hacia atrás (Shift+Tab)
      function focusPreviousElement() {
@@ -217,16 +259,183 @@ index e2007a50..a341b55b 100644
              focusSearch();
          } else {
              currentFocusIndex--;
-@@ -341,6 +349,71 @@ FocusScope {
+@@ -769,14 +805,240 @@ FocusScope {
                  }
              }
  
-+            // Settings Button to open Wallpaper & Transition Settings
+-            // Spacer
+-            // Item { Layout.fillWidth: true }
++            // Day / Night Mode Toggle
 +            Item {
-+                id: settingsBtnContainer
++                id: dayNightContainer
++                Layout.preferredWidth: 84
++                Layout.preferredHeight: 48
+ 
+-            // Scheme Selector a la derecha
++                property bool keyboardNavigationActive: false
++
++                StyledRect {
++                    variant: (dayNightContainer.keyboardNavigationActive && dayNightBtn.activeFocus) || dayNightMa.containsMouse ? "focus" : "pane"
++                    anchors.fill: parent
++                    radius: Styling.radius(4)
++
++                    Item {
++                        id: dayNightBtn
++                        anchors.fill: parent
++
++                        onActiveFocusChanged: {
++                            if (!activeFocus) {
++                                dayNightContainer.keyboardNavigationActive = false;
++                            }
++                        }
++
++                        Keys.onPressed: event => {
++                            if (event.key === Qt.Key_Tab) {
++                                dayNightContainer.keyboardNavigationActive = false;
++                                if (event.modifiers & Qt.ShiftModifier) {
++                                    wallpapersTabRoot.focusPreviousElement();
++                                } else {
++                                    wallpapersTabRoot.focusNextElement();
++                                }
++                                event.accepted = true;
++                            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
++                                Config.theme.lightMode = !Config.theme.lightMode;
++                                event.accepted = true;
++                            } else if (event.key === Qt.Key_Escape) {
++                                dayNightContainer.keyboardNavigationActive = false;
++                                focusSearch();
++                                event.accepted = true;
++                            }
++                        }
++
++                        MouseArea {
++                            id: dayNightMa
++                            anchors.fill: parent
++                            hoverEnabled: true
++                            cursorShape: Qt.PointingHandCursor
++                            onClicked: {
++                                Config.theme.lightMode = !Config.theme.lightMode;
++                            }
++
++                            RowLayout {
++                                anchors.fill: parent
++                                anchors.margins: 4
++                                spacing: 4
++
++                                Rectangle {
++                                    Layout.fillWidth: true
++                                    Layout.fillHeight: true
++                                    color: Colors.background
++                                    radius: Styling.radius(0)
++
++                                    Text {
++                                        anchors.fill: parent
++                                        text: Config.theme.lightMode ? "Day" : "Night"
++                                        color: Colors.overSurface
++                                        font.family: Config.theme.font
++                                        font.pixelSize: Config.theme.fontSize
++                                        font.weight: Font.Medium
++                                        verticalAlignment: Text.AlignVCenter
++                                        horizontalAlignment: Text.AlignHCenter
++                                    }
++                                }
++
++                                Item {
++                                    Layout.preferredWidth: 36
++                                    Layout.preferredHeight: 36
++
++                                    StyledRect {
++                                        variant: Config.theme.lightMode ? "primary" : "pane"
++                                        anchors.fill: parent
++                                        radius: Styling.radius(0)
++
++                                        Text {
++                                            anchors.centerIn: parent
++                                            text: Config.theme.lightMode ? Icons.sun : Icons.moon
++                                            color: Config.theme.lightMode ? Styling.srItem("primary") : Colors.overSurface
++                                            font.family: Icons.font
++                                            font.pixelSize: 18
++                                        }
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++
++            // Random Wallpaper Shuffle Button
++            Item {
++                id: randomBtnContainer
 +                Layout.preferredWidth: 48
 +                Layout.preferredHeight: 48
 +
++                property bool keyboardNavigationActive: false
++
++                StyledRect {
++                    variant: (randomBtnContainer.keyboardNavigationActive && randomBtn.activeFocus) || randomMa.containsMouse ? "focus" : "pane"
++                    anchors.fill: parent
++                    radius: Styling.radius(4)
++
++                    Item {
++                        id: randomBtn
++                        anchors.fill: parent
++
++                        onActiveFocusChanged: {
++                            if (!activeFocus) {
++                                randomBtnContainer.keyboardNavigationActive = false;
++                            }
++                        }
++
++                        Keys.onPressed: event => {
++                            if (event.key === Qt.Key_Tab) {
++                                randomBtnContainer.keyboardNavigationActive = false;
++                                if (event.modifiers & Qt.ShiftModifier) {
++                                    wallpapersTabRoot.focusPreviousElement();
++                                } else {
++                                    wallpapersTabRoot.focusNextElement();
++                                }
++                                event.accepted = true;
++                            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
++                                randomBtnContainer.keyboardNavigationActive = false;
++                                GlobalStates.triggerRandomWallpaper();
++                                event.accepted = true;
++                            } else if (event.key === Qt.Key_Escape) {
++                                randomBtnContainer.keyboardNavigationActive = false;
++                                focusSearch();
++                                event.accepted = true;
++                            }
++                        }
++
++                        MouseArea {
++                            id: randomMa
++                            anchors.fill: parent
++                            hoverEnabled: true
++                            cursorShape: Qt.PointingHandCursor
++                            onClicked: {
++                                randomBtnContainer.keyboardNavigationActive = false;
++                                GlobalStates.triggerRandomWallpaper();
++                            }
++
++                            Text {
++                                anchors.centerIn: parent
++                                text: Icons.shuffle
++                                font.family: Icons.font
++                                font.pixelSize: 20
++                                color: (randomBtnContainer.keyboardNavigationActive && randomBtn.activeFocus) || randomMa.containsMouse ? Styling.srItem("focus") : Colors.overSurface
++                            }
++                        }
++                    }
++                }
++            }
++
++            // Advanced Settings Button
+             Item {
+-                Layout.preferredWidth: 200
++                id: settingsBtnContainer
++                Layout.preferredWidth: 48
+                 Layout.preferredHeight: 48
+ 
 +                property bool keyboardNavigationActive: false
 +
 +                StyledRect {
@@ -286,46 +495,16 @@ index e2007a50..a341b55b 100644
 +                }
 +            }
 +
-             // Per-Screen Monitor toggle
-             Item {
-                 id: perScreenCheckboxContainer
-@@ -487,8 +560,9 @@ FocusScope {
-             // OLED Mode
-             Item {
-                 id: oledCheckboxContainer
--                Layout.preferredWidth: 100
--                Layout.preferredHeight: 48
++            // Scheme Selector a la derecha
++            Item {
 +                visible: false
 +                Layout.preferredWidth: 0
 +                Layout.preferredHeight: 0
- 
-                 property bool keyboardNavigationActive: false
- 
-@@ -642,8 +716,9 @@ FocusScope {
-             // Tint Toggle a la derecha del search
-             Item {
-                 id: tintCheckboxContainer
--                Layout.preferredWidth: 100
--                Layout.preferredHeight: 48
-+                visible: false
-+                Layout.preferredWidth: 0
-+                Layout.preferredHeight: 0
- 
-                 property bool keyboardNavigationActive: false
- 
-@@ -774,8 +849,9 @@ FocusScope {
- 
-             // Scheme Selector a la derecha
-             Item {
--                Layout.preferredWidth: 200
--                Layout.preferredHeight: 48
-+                visible: false
-+                Layout.preferredWidth: 0
-+                Layout.preferredHeight: 0
- 
++
                  SchemeSelector {
                      id: schemeSelector
-@@ -1227,4 +1303,16 @@ FocusScope {
+                     anchors.top: parent.top
+@@ -1227,4 +1489,16 @@ FocusScope {
              }
          }
      }
