@@ -46,6 +46,10 @@ A native modification package for [Ambxst](https://github.com/Axenide/Ambxst) in
   - Lockscreen video synchronization (`activeVideo.positionMs`) preserved.
   - Native Niri overview blur pass support across all media types.
   - High-quality image downscaling with `mipmap: true`.
+- **High-Performance Large-Library Wallpaper Picker**:
+  - Eliminates blocking disk scans on tab opening for instantaneous opening and closing.
+  - Optimized delegate caching and singleton active wallpaper path matching ensuring 60fps buttery scrolling across massive libraries (5,000+ wallpapers).
+  - Power-efficient spinner animation that halts when invisible or loaded.
 - **VRAM & Memory Efficient**: Dual-buffer transition engine unloads previous wallpaper textures and stops inactive video decoders immediately once transitions finish, preventing memory or GPU VRAM leaks.
 
 ---
@@ -118,7 +122,7 @@ ambxst run wallpaper-random
 
 - **Arrow Keys (<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>)**:
   Fluid **2D spatial navigation** across all settings and sub-panels:
-  - <kbd>↑</kbd> and <kbd>↓</kbd> move seamlessly across items and navigate between sections (`Transition Style` ↔ `Easing & Duration` ↔ `Automation` ↔ `Display Effects` ↔ `Color Schemes` ↔ `Presets` ↔ `Back Button`).
+  - <kbd>↑</kbd> and <kbd>↓</kbd> move seamlessly across items and navigate between sections (`Transition Style` ↔ `Easing & Duration` ↔ `Automation` ↔ `Color Schemes` ↔ `Presets` ↔ `Back Button`).
   - <kbd>←</kbd> and <kbd>→</kbd> move across items, and cross over horizontally between the `Easing Curve` and `Animation Duration` columns.
 - **<kbd>Tab</kbd> / <kbd>Shift + Tab</kbd>**:
   Quickly jumps between major section headers.

@@ -197,7 +197,7 @@ index 099acb04..7e28b63e 100644
      }
  
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index 195fd45f..60b3a68d 100644
+index 195fd45f..c1db9796 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -11,6 +11,7 @@ import qs.config
@@ -208,10 +208,19 @@ index 195fd45f..60b3a68d 100644
  
      // Propiedades personalizadas para la funcionalidad del componente.
      property string searchText: ""
-@@ -30,6 +31,18 @@ FocusScope {
+@@ -30,6 +31,27 @@ FocusScope {
          return perScreen[currentScreenName] !== undefined;
      }
  
++    readonly property string activeWallpaperPath: {
++        if (!GlobalStates.wallpaperManager) return "";
++        let perScreen = GlobalStates.wallpaperManager.perScreenWallpapers || {};
++        if (currentScreenName !== "" && perScreen[currentScreenName] !== undefined) {
++            return perScreen[currentScreenName];
++        }
++        return GlobalStates.wallpaperManager.currentWallpaper || "";
++    }
++
 +    property bool showSettings: GlobalStates.wallpapersTabShowSettings
 +
 +    onShowSettingsChanged: {
@@ -227,7 +236,7 @@ index 195fd45f..60b3a68d 100644
      function togglePerScreenMode() {
          if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
          
-@@ -74,9 +87,24 @@ FocusScope {
+@@ -74,9 +96,24 @@ FocusScope {
              }
          },
          {
@@ -254,7 +263,7 @@ index 195fd45f..60b3a68d 100644
              }
          },
          {
-@@ -91,7 +119,12 @@ FocusScope {
+@@ -91,7 +128,12 @@ FocusScope {
  
      // Función para enfocar el campo de búsqueda
      function focusSearch() {
@@ -267,7 +276,7 @@ index 195fd45f..60b3a68d 100644
          wallpaperSearchInput.focusInput();
  
          // Restaurar índice válido si está en -1 y hay wallpapers
-@@ -128,8 +161,11 @@ FocusScope {
+@@ -128,8 +170,11 @@ FocusScope {
  
      // Función para navegar hacia atrás (Shift+Tab)
      function focusPreviousElement() {
@@ -281,7 +290,60 @@ index 195fd45f..60b3a68d 100644
              focusSearch();
          } else {
              currentFocusIndex--;
-@@ -769,14 +805,240 @@ FocusScope {
+@@ -155,24 +200,10 @@ FocusScope {
+ 
+     // Función para encontrar el índice del wallpaper actual en la lista filtrada
+     function findCurrentWallpaperIndex() {
+-        if (!GlobalStates.wallpaperManager) {
+-            return -1;
+-        }
+-
+-        let perScreen = GlobalStates.wallpaperManager.perScreenWallpapers || {};
+-        let currentWallpaper = "";
+-        
+-        if (currentScreenName !== "" && perScreen[currentScreenName] !== undefined) {
+-            currentWallpaper = perScreen[currentScreenName];
+-        } else {
+-            currentWallpaper = GlobalStates.wallpaperManager.currentWallpaper;
+-        }
+-
+-        if (!currentWallpaper) {
++        if (!activeWallpaperPath) {
+             return -1;
+         }
+-
+-        return filteredWallpapers.indexOf(currentWallpaper);
++        return filteredWallpapers.indexOf(activeWallpaperPath);
+     }
+ 
+     // Llama a focusSearch una vez que el componente se ha completado.
+@@ -180,10 +211,10 @@ FocusScope {
+         centerTimer.start();
+     }
+ 
+-    // Actualizar subcarpetas cuando la pestaña se haga visible
++    // Actualizar subcarpetas cuando la pestaña se haga visible (solo si no se han escaneado)
+     onVisibleChanged: {
+         if (visible) {
+-            if (GlobalStates.wallpaperManager) {
++            if (GlobalStates.wallpaperManager && (!GlobalStates.wallpaperManager.subfolderFilters || GlobalStates.wallpaperManager.subfolderFilters.length === 0)) {
+                 console.log("WallpapersTab became visible, updating subfolders");
+                 GlobalStates.wallpaperManager.scanSubfolders();
+             }
+@@ -192,10 +223,10 @@ FocusScope {
+         }
+     }
+ 
+-    // Timer para asegurar que el centrado ocurre después de que el GridView esté listo
++    // Timer para asegurar que el centrado ocurre suavemente después de la animación de apertura
+     Timer {
+         id: centerTimer
+-        interval: 50
++        interval: 220
+         repeat: false
+         onTriggered: {
+             centerCurrentWallpaper();
+@@ -769,14 +800,240 @@ FocusScope {
                  }
              }
  
@@ -387,11 +449,12 @@ index 195fd45f..60b3a68d 100644
 +            }
 +
 +            // Random Wallpaper Shuffle Button
-+            Item {
+             Item {
+-                Layout.preferredWidth: 200
 +                id: randomBtnContainer
 +                Layout.preferredWidth: 48
-+                Layout.preferredHeight: 48
-+
+                 Layout.preferredHeight: 48
+ 
 +                property bool keyboardNavigationActive: false
 +
 +                StyledRect {
@@ -452,12 +515,11 @@ index 195fd45f..60b3a68d 100644
 +            }
 +
 +            // Advanced Settings Button
-             Item {
--                Layout.preferredWidth: 200
++            Item {
 +                id: settingsBtnContainer
 +                Layout.preferredWidth: 48
-                 Layout.preferredHeight: 48
- 
++                Layout.preferredHeight: 48
++
 +                property bool keyboardNavigationActive: false
 +
 +                StyledRect {
@@ -526,7 +588,88 @@ index 195fd45f..60b3a68d 100644
                  SchemeSelector {
                      id: schemeSelector
                      anchors.top: parent.top
-@@ -1227,4 +1489,16 @@ FocusScope {
+@@ -864,9 +1121,9 @@ FocusScope {
+                 highlightFollowsCurrentItem: !isScrolling
+ 
+                 // Optimizaciones de rendimiento
+-                cacheBuffer: cellHeight
+-                displayMarginBeginning: cellHeight
+-                displayMarginEnd: cellHeight
++                cacheBuffer: cellHeight * 3
++                displayMarginBeginning: cellHeight * 2
++                displayMarginEnd: cellHeight * 2
+                 reuseItems: true
+ 
+                 // Configuración de scroll optimizada
+@@ -940,20 +1197,7 @@ FocusScope {
+                                 clip: true
+ 
+                                 property var currentItem: wallpaperGrid.currentItem
+-                                property bool isCurrentWallpaper: {
+-                                    if (!GlobalStates.wallpaperManager || wallpaperGrid.currentIndex < 0)
+-                                        return false;
+-                                        
+-                                    let perScreen = GlobalStates.wallpaperManager.perScreenWallpapers || {};
+-                                    let currentWall = "";
+-                                    if (currentScreenName !== "" && perScreen[currentScreenName] !== undefined) {
+-                                        currentWall = perScreen[currentScreenName];
+-                                    } else {
+-                                        currentWall = GlobalStates.wallpaperManager.currentWallpaper;
+-                                    }
+-                                        
+-                                    return currentWall === filteredWallpapers[wallpaperGrid.currentIndex];
+-                                }
++                                property bool isCurrentWallpaper: (wallpaperGrid.currentIndex >= 0 && wallpaperGrid.currentIndex < filteredWallpapers.length) ? (filteredWallpapers[wallpaperGrid.currentIndex] === wallpapersTabRoot.activeWallpaperPath) : false
+                                 property bool showHoveredItem: currentItem && currentItem.isHovered && !visible
+ 
+                                 visible: selectedIndex >= 0 || showHoveredItem
+@@ -1056,32 +1300,20 @@ FocusScope {
+                     height: wallpaperGrid.cellHeight
+                     color: "transparent"
+ 
+-                    property bool isCurrentWallpaper: {
+-                        if (!GlobalStates.wallpaperManager)
+-                            return false;
+-                            
+-                        let perScreen = GlobalStates.wallpaperManager.perScreenWallpapers || {};
+-                        let currentWall = "";
+-                        if (currentScreenName !== "" && perScreen[currentScreenName] !== undefined) {
+-                            currentWall = perScreen[currentScreenName];
+-                        } else {
+-                            currentWall = GlobalStates.wallpaperManager.currentWallpaper;
+-                        }
+-                        return currentWall === modelData;
+-                    }
++                    property bool isCurrentWallpaper: modelData === wallpapersTabRoot.activeWallpaperPath
+ 
+                     property bool isHovered: false
+                     property bool isSelected: selectedIndex === index
+ 
+-                    // Calcular si el item está visible en el viewport (con buffer para precarga)
++                    // Calcular si el item está visible en el viewport (con buffer amplio para precarga suave)
+                     readonly property bool isInViewport: {
+                         var gridTop = wallpaperGrid.contentY;
+                         var gridBottom = gridTop + wallpaperGrid.height;
+                         var itemTop = y;
+                         var itemBottom = itemTop + height;
+ 
+-                        // Buffer de una fila arriba y abajo para precarga suave
+-                        var buffer = wallpaperGrid.cellHeight;
++                        // Buffer de 3 filas arriba y abajo para precarga suave sin churn
++                        var buffer = wallpaperGrid.cellHeight * 3;
+                         return itemBottom + buffer >= gridTop && itemTop - buffer <= gridBottom;
+                     }
+ 
+@@ -1122,7 +1354,7 @@ FocusScope {
+                                             to: 360
+                                             duration: 1000
+                                             loops: Animation.Infinite
+-                                            running: parent.visible
++                                            running: parent.visible && parent.parent.status === Loader.Loading
+                                         }
+                                     }
+                                 }
+@@ -1227,4 +1459,16 @@ FocusScope {
              }
          }
      }
