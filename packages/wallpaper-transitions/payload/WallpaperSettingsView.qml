@@ -847,11 +847,16 @@ FocusScope {
                     Layout.fillWidth: true
                     spacing: 14
 
+                    readonly property real col1Width: Math.max(0, Math.floor((width - spacing) / 2))
+                    readonly property real col2Width: Math.max(0, width - spacing - col1Width)
+
                     // Section 1: Easing Curves
                     ColumnLayout {
                         id: sectionEasing
+                        Layout.minimumWidth: sectionEasingAndDuration.col1Width
+                        Layout.maximumWidth: sectionEasingAndDuration.col1Width
+                        Layout.preferredWidth: sectionEasingAndDuration.col1Width
                         Layout.fillWidth: true
-                        Layout.preferredWidth: 1
                         spacing: 6
 
                         RowLayout {
@@ -975,8 +980,10 @@ FocusScope {
                     // Section 2: Duration Column
                     ColumnLayout {
                         id: sectionDuration
+                        Layout.minimumWidth: sectionEasingAndDuration.col2Width
+                        Layout.maximumWidth: sectionEasingAndDuration.col2Width
+                        Layout.preferredWidth: sectionEasingAndDuration.col2Width
                         Layout.fillWidth: true
-                        Layout.preferredWidth: 1
                         spacing: 6
 
                         RowLayout {
