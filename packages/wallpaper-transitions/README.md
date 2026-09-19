@@ -41,7 +41,8 @@ A premier, high-performance modification package for the [Ambxst Desktop Environ
 ### ⚙️ Dedicated In-Tab Advanced Settings Panel
 - **Seamless Modal Experience**: Replaces the wallpaper grid in-place within the dashboard tab without opening a separate popup or disruptive window.
 - **Live Visual Feedback**:
-  - Current active settings highlighted with accent glow badges.
+  - Active section headers illuminate with your theme accent color without layout shift or jitter.
+  - Focused cards feature a crisp 2px primary focus border for clear keyboard navigation.
   - Real-time previews: clicking or applying an option updates configuration immediately.
 - **Integrated Theming Controls**:
   - **Material You Color Schemes**: Select between 8 M3 palette schemes (`Tonal Spot`, `Content`, `Expressive`, `Fruit Salad`, `Monochrome`, `Neutral`, `Rainbow`, `Vibrant`).
