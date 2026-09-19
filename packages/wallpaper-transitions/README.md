@@ -38,11 +38,15 @@ A native modification package for [Ambxst](https://github.com/Axenide/Ambxst) in
   - **Quadratic**: Soft, gentle deceleration curve.
   - **Linear**: Constant, unvaried speed from start to end.
 - **Quick Duration Presets**: Fast (`200ms`), Normal (`400ms`), Smooth (`700ms`), Cinematic (`1200ms`).
+- **Unified Multimedia Transitions**:
+  - Full animated transition support across all media formats: **Static Images** (`.png`, `.jpg`, `.webp`), **Animated GIFs** (native looping `AnimatedImage`), and **Live Videos** (`.mp4`, `.webm`, etc.).
+  - Smooth concurrent video decoding during transitions with automatic frame readiness detection (`positionMs > 0`) to guarantee **zero black frames**.
+  - Works between any combination: Image ↔ Image, Image ↔ GIF, GIF ↔ GIF, Image ↔ Video, GIF ↔ Video, and Video ↔ Video.
 - **Ambxst 1.3.6+ Modern Stack Compatibility**:
-  - Native `QtMultimedia` `VideoWallpaper` integration for video and GIF wallpapers.
-  - Native Niri overview blur pass support.
+  - Lockscreen video synchronization (`activeVideo.positionMs`) preserved.
+  - Native Niri overview blur pass support across all media types.
   - High-quality image downscaling with `mipmap: true`.
-- **VRAM & Memory Efficient**: Dual-buffer transition engine unloads previous wallpaper textures once transitions finish, preventing memory leaks on high-resolution setups.
+- **VRAM & Memory Efficient**: Dual-buffer transition engine unloads previous wallpaper textures and stops inactive video decoders immediately once transitions finish, preventing memory or GPU VRAM leaks.
 
 ---
 
@@ -112,20 +116,14 @@ ambxst run wallpaper-random
 
 #### 2. In Advanced Settings Panel
 
-- **<kbd>Tab</kbd> / <kbd>Shift + Tab</kbd>**:
-  Cycles through the major sections with live indicator badge:
-  1. `TRANSITION STYLE`
-  2. `EASING CURVE`
-  3. `ANIMATION DURATION`
-  4. `AUTOMATION & ROTATION` (Shuffle Now & Periodic Timer)
-  5. `DISPLAY & SHADER EFFECTS` (OLED & Tint)
-  6. `MATERIAL YOU COLOR SCHEMES`
-  7. `COLOR PRESETS` (if available)
-  8. `Back to Wallpapers`
 - **Arrow Keys (<kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>)**:
-  Navigates items within the active section.
+  Fluid **2D spatial navigation** across all settings and sub-panels:
+  - <kbd>↑</kbd> and <kbd>↓</kbd> move seamlessly across items and navigate between sections (`Transition Style` ↔ `Easing & Duration` ↔ `Automation` ↔ `Display Effects` ↔ `Color Schemes` ↔ `Presets` ↔ `Back Button`).
+  - <kbd>←</kbd> and <kbd>→</kbd> move across items, and cross over horizontally between the `Easing Curve` and `Animation Duration` columns.
+- **<kbd>Tab</kbd> / <kbd>Shift + Tab</kbd>**:
+  Quickly jumps between major section headers.
 - **<kbd>Space</kbd> / <kbd>Enter</kbd>**:
-  Selects options, triggers random shuffle, or toggles auto-rotation.
+  Applies selected setting, triggers random shuffle, or toggles auto-rotation (arrow keys only navigate without forcing immediate changes).
 - **<kbd>Esc</kbd>**:
   Instantly returns to the wallpaper picker and refocuses the search bar.
 

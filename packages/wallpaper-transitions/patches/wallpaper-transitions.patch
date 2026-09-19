@@ -1,8 +1,8 @@
 diff --git a/modules/globals/GlobalStates.qml b/modules/globals/GlobalStates.qml
-index eb6e9ccd..aa6ef2d3 100644
+index eb6e9ccd..f2fd65a0 100644
 --- a/modules/globals/GlobalStates.qml
 +++ b/modules/globals/GlobalStates.qml
-@@ -190,6 +190,79 @@ Singleton {
+@@ -190,6 +190,101 @@ Singleton {
          wallpaperSelectedIndex = -1;
      }
  
@@ -16,44 +16,59 @@ index eb6e9ccd..aa6ef2d3 100644
 +
 +    function setWallpaperTransitionStyle(style) {
 +        wallpaperTransitionStyle = style;
-+        StateService.set("wallpaperTransitionStyle", style);
++        if (StateService && StateService.initialized) StateService.set("wallpaperTransitionStyle", style);
 +    }
 +
 +    function setWallpaperTransitionEasing(easing) {
 +        wallpaperTransitionEasing = easing;
-+        StateService.set("wallpaperTransitionEasing", easing);
++        if (StateService && StateService.initialized) StateService.set("wallpaperTransitionEasing", easing);
 +    }
 +
 +    function setWallpaperTransitionDuration(duration) {
 +        wallpaperTransitionDuration = duration;
-+        StateService.set("wallpaperTransitionDuration", duration);
++        if (StateService && StateService.initialized) StateService.set("wallpaperTransitionDuration", duration);
 +    }
 +
 +    function setWallpaperPeriodicEnabled(enabled) {
 +        wallpaperPeriodicEnabled = enabled;
-+        StateService.set("wallpaperPeriodicEnabled", enabled);
++        if (StateService && StateService.initialized) StateService.set("wallpaperPeriodicEnabled", enabled);
 +    }
 +
 +    function setWallpaperPeriodicInterval(interval) {
 +        wallpaperPeriodicInterval = interval;
-+        StateService.set("wallpaperPeriodicInterval", interval);
++        if (StateService && StateService.initialized) StateService.set("wallpaperPeriodicInterval", interval);
 +    }
 +
 +    function triggerRandomWallpaper() {
 +        if (!wallpaperManager || !wallpaperManager.wallpaperPaths || wallpaperManager.wallpaperPaths.length === 0) return;
 +        let paths = wallpaperManager.wallpaperPaths;
-+        if (paths.length <= 1) {
-+            wallpaperManager.setWallpaperByIndex(0);
-+            wallpaperSelectedIndex = 0;
-+            return;
++        if (paths.length === 0) return;
++
++        let screenName = (typeof AxctlService !== "undefined" && AxctlService.focusedMonitor && AxctlService.focusedMonitor.name)
++            ? AxctlService.focusedMonitor.name
++            : ((wallpaperManager.screen && wallpaperManager.screen.name) ? wallpaperManager.screen.name : (wallpaperManager.currentScreenName || ""));
++        let perScreen = wallpaperManager.perScreenWallpapers || {};
++        let isPerScreen = (screenName !== "" && perScreen[screenName] !== undefined);
++
++        let curPath = isPerScreen ? perScreen[screenName] : ((wallpaperManager.effectiveWallpaper !== undefined && wallpaperManager.effectiveWallpaper !== "") ? wallpaperManager.effectiveWallpaper : (wallpaperManager.currentWallpaper || ""));
++        let curIndex = paths.indexOf(curPath);
++        if (curIndex === -1) curIndex = wallpaperManager.currentIndex >= 0 ? wallpaperManager.currentIndex : wallpaperSelectedIndex;
++
++        let nextIndex = 0;
++        if (paths.length > 1) {
++            nextIndex = Math.floor(Math.random() * paths.length);
++            if (nextIndex === curIndex) {
++                nextIndex = (nextIndex + 1) % paths.length;
++            }
 +        }
-+        let cur = wallpaperManager.currentIndex >= 0 ? wallpaperManager.currentIndex : wallpaperSelectedIndex;
-+        let next = Math.floor(Math.random() * paths.length);
-+        if (next === cur) {
-+            next = (next + 1) % paths.length;
++
++        let nextWallpaper = paths[nextIndex];
++        if (isPerScreen) {
++            wallpaperManager.setWallpaper(nextWallpaper, screenName);
++        } else {
++            wallpaperManager.setWallpaper(nextWallpaper);
 +        }
-+        wallpaperManager.setWallpaperByIndex(next);
-+        wallpaperSelectedIndex = next;
++        wallpaperSelectedIndex = nextIndex;
 +    }
 +
 +    Timer {
@@ -76,6 +91,13 @@ index eb6e9ccd..aa6ef2d3 100644
 +                root.wallpaperPeriodicEnabled = StateService.get("wallpaperPeriodicEnabled", false);
 +                root.wallpaperPeriodicInterval = StateService.get("wallpaperPeriodicInterval", 15);
 +            }
++        }
++        function onStateLoaded() {
++            root.wallpaperTransitionStyle = StateService.get("wallpaperTransitionStyle", "crossfade");
++            root.wallpaperTransitionEasing = StateService.get("wallpaperTransitionEasing", "cubic");
++            root.wallpaperTransitionDuration = StateService.get("wallpaperTransitionDuration", 400);
++            root.wallpaperPeriodicEnabled = StateService.get("wallpaperPeriodicEnabled", false);
++            root.wallpaperPeriodicInterval = StateService.get("wallpaperPeriodicInterval", 15);
 +        }
 +    }
 +

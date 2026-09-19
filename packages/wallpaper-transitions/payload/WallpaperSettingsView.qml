@@ -277,103 +277,220 @@ FocusScope {
 
     function handleArrowKey(key) {
         switch (currentSection) {
-        case 0:
+        case 7: // Back to Wallpapers button (at top)
+            if (key === Qt.Key_Down) {
+                currentSection = 0;
+                focusedStyleIndex = 0;
+            }
+            break;
+
+        case 0: // Transition Style (10 items, 2 cols x 5 rows)
+            // Column 0 (even): 0, 2, 4, 6, 8
+            // Column 1 (odd):  1, 3, 5, 7, 9
             if (key === Qt.Key_Right) {
-                if (focusedStyleIndex < styleOptions.length - 1) focusedStyleIndex++;
+                if (focusedStyleIndex % 2 === 0 && focusedStyleIndex + 1 < styleOptions.length) {
+                    focusedStyleIndex++;
+                }
             } else if (key === Qt.Key_Left) {
-                if (focusedStyleIndex > 0) focusedStyleIndex--;
+                if (focusedStyleIndex % 2 === 1) {
+                    focusedStyleIndex--;
+                }
             } else if (key === Qt.Key_Down) {
-                if (focusedStyleIndex + 2 < styleOptions.length) focusedStyleIndex += 2;
-                else if (focusedStyleIndex + 1 < styleOptions.length) focusedStyleIndex += 1;
+                if (focusedStyleIndex + 2 < styleOptions.length) {
+                    focusedStyleIndex += 2;
+                } else {
+                    // Reached bottom row of Transition Style (index 8 or 9)
+                    // Move down to Easing Curve (if left column) or Duration (if right column)
+                    if (focusedStyleIndex % 2 === 0) {
+                        currentSection = 1; // Easing Curve
+                        focusedEasingIndex = 0;
+                    } else {
+                        currentSection = 2; // Animation Duration
+                        focusedSpeedIndex = 0;
+                    }
+                }
             } else if (key === Qt.Key_Up) {
-                if (focusedStyleIndex - 2 >= 0) focusedStyleIndex -= 2;
-                else if (focusedStyleIndex > 0) focusedStyleIndex = 0;
+                if (focusedStyleIndex >= 2) {
+                    focusedStyleIndex -= 2;
+                } else {
+                    // Top row (index 0 or 1), go up to Back Button
+                    currentSection = 7;
+                }
             }
-            root.updateSetting("transitionStyle", styleOptions[focusedStyleIndex].id);
             break;
 
-        case 1:
+        case 1: // Easing Curve (6 items, 2 cols x 3 rows: 0,1 / 2,3 / 4,5)
             if (key === Qt.Key_Right) {
-                if (focusedEasingIndex < easingOptions.length - 1) focusedEasingIndex++;
+                if (focusedEasingIndex % 2 === 0 && focusedEasingIndex + 1 < easingOptions.length) {
+                    focusedEasingIndex++;
+                } else {
+                    // At right column of Easing, cross over horizontally to Animation Duration!
+                    currentSection = 2;
+                    let row = Math.floor(focusedEasingIndex / 2);
+                    focusedSpeedIndex = Math.min(row, speedOptions.length - 1);
+                }
             } else if (key === Qt.Key_Left) {
-                if (focusedEasingIndex > 0) focusedEasingIndex--;
+                if (focusedEasingIndex % 2 === 1) {
+                    focusedEasingIndex--;
+                }
             } else if (key === Qt.Key_Down) {
-                if (focusedEasingIndex + 2 < easingOptions.length) focusedEasingIndex += 2;
-                else if (focusedEasingIndex + 1 < easingOptions.length) focusedEasingIndex += 1;
+                if (focusedEasingIndex + 2 < easingOptions.length) {
+                    focusedEasingIndex += 2;
+                } else {
+                    // Reached bottom of Easing Curve -> move down to Section 3 (Automation)
+                    currentSection = 3;
+                    focusedAutomationIndex = 0; // "Shuffle Now" (left side)
+                }
             } else if (key === Qt.Key_Up) {
-                if (focusedEasingIndex - 2 >= 0) focusedEasingIndex -= 2;
-                else if (focusedEasingIndex > 0) focusedEasingIndex = 0;
+                if (focusedEasingIndex >= 2) {
+                    focusedEasingIndex -= 2;
+                } else {
+                    // Move up to Transition Style (bottom row, left col: index 8)
+                    currentSection = 0;
+                    focusedStyleIndex = 8;
+                }
             }
-            root.updateSetting("easingCurve", easingOptions[focusedEasingIndex].id);
             break;
 
-        case 2:
-            if (key === Qt.Key_Right || key === Qt.Key_Down) {
-                if (focusedSpeedIndex < speedOptions.length - 1) focusedSpeedIndex++;
-            } else if (key === Qt.Key_Left || key === Qt.Key_Up) {
-                if (focusedSpeedIndex > 0) focusedSpeedIndex--;
-            }
-            root.updateSetting("duration", speedOptions[focusedSpeedIndex].value);
-            break;
-
-        case 3:
+        case 2: // Animation Duration (4 items in 1 horizontal row: 0..3)
             if (key === Qt.Key_Right) {
-                if (focusedAutomationIndex < 7) focusedAutomationIndex++;
+                if (focusedSpeedIndex < speedOptions.length - 1) {
+                    focusedSpeedIndex++;
+                }
             } else if (key === Qt.Key_Left) {
-                if (focusedAutomationIndex > 0) focusedAutomationIndex--;
+                if (focusedSpeedIndex > 0) {
+                    focusedSpeedIndex--;
+                } else {
+                    // At left edge of Duration, cross over horizontally to Easing Curve (right column)!
+                    currentSection = 1;
+                    focusedEasingIndex = 1; // right col, top row
+                }
             } else if (key === Qt.Key_Down) {
-                if (focusedAutomationIndex < 2) focusedAutomationIndex = 2;
-                else if (focusedAutomationIndex < 7) focusedAutomationIndex++;
+                // Move down to Section 3 (Automation & Rotation, right side: periodic toggle/intervals)
+                currentSection = 3;
+                focusedAutomationIndex = 1; // Periodic Rotation
             } else if (key === Qt.Key_Up) {
-                if (focusedAutomationIndex >= 2) focusedAutomationIndex = 1;
-                else focusedAutomationIndex = 0;
-            }
-            if (focusedAutomationIndex >= 2 && GlobalStates) {
-                GlobalStates.setWallpaperPeriodicInterval(intervalOptions[focusedAutomationIndex - 2].value);
+                // Move up to Transition Style (bottom row, right col: index 9)
+                currentSection = 0;
+                focusedStyleIndex = 9;
             }
             break;
 
-        case 4:
-            if (key === Qt.Key_Right || key === Qt.Key_Down) {
-                focusedEffectIndex = 1;
-            } else if (key === Qt.Key_Left || key === Qt.Key_Up) {
-                focusedEffectIndex = 0;
-            }
-            break;
-
-        case 5:
+        case 3: // Automation & Rotation (0: Shuffle, 1: Periodic Toggle, 2..7: Interval pills)
             if (key === Qt.Key_Right) {
-                if (focusedSchemeIndex < matugenSchemes.length - 1) focusedSchemeIndex++;
+                if (focusedAutomationIndex < 7) {
+                    focusedAutomationIndex++;
+                }
             } else if (key === Qt.Key_Left) {
-                if (focusedSchemeIndex > 0) focusedSchemeIndex--;
+                if (focusedAutomationIndex > 0) {
+                    focusedAutomationIndex--;
+                }
             } else if (key === Qt.Key_Down) {
-                if (focusedSchemeIndex + 4 < matugenSchemes.length) focusedSchemeIndex += 4;
-                else focusedSchemeIndex = matugenSchemes.length - 1;
+                // Move down to Section 4 (Display & Shader Effects)
+                currentSection = 4;
+                if (focusedAutomationIndex === 0) {
+                    focusedEffectIndex = 0; // OLED mode (left)
+                } else {
+                    focusedEffectIndex = 1; // Dynamic tint (right)
+                }
             } else if (key === Qt.Key_Up) {
-                if (focusedSchemeIndex - 4 >= 0) focusedSchemeIndex -= 4;
-                else focusedSchemeIndex = 0;
-            }
-            if (GlobalStates.wallpaperManager) {
-                GlobalStates.wallpaperManager.setMatugenScheme(matugenSchemes[focusedSchemeIndex].id);
+                // Move up to Easing (if left) or Duration (if right)
+                if (focusedAutomationIndex === 0) {
+                    currentSection = 1;
+                    focusedEasingIndex = 4; // bottom row of Easing
+                } else {
+                    currentSection = 2;
+                    focusedSpeedIndex = Math.min(Math.max(0, focusedAutomationIndex - 2), speedOptions.length - 1);
+                }
             }
             break;
 
-        case 6:
+        case 4: // Display & Shader Effects (0: OLED, 1: Tint)
+            if (key === Qt.Key_Right) {
+                if (focusedEffectIndex === 0) {
+                    focusedEffectIndex = 1;
+                }
+            } else if (key === Qt.Key_Left) {
+                if (focusedEffectIndex === 1) {
+                    focusedEffectIndex = 0;
+                }
+            } else if (key === Qt.Key_Down) {
+                // Move down to Section 5 (Material You Schemes)
+                currentSection = 5;
+                if (focusedEffectIndex === 0) {
+                    focusedSchemeIndex = 0;
+                } else {
+                    focusedSchemeIndex = 2;
+                }
+            } else if (key === Qt.Key_Up) {
+                // Move up to Section 3 (Automation)
+                currentSection = 3;
+                if (focusedEffectIndex === 0) {
+                    focusedAutomationIndex = 0; // Shuffle
+                } else {
+                    focusedAutomationIndex = 1; // Periodic toggle
+                }
+            }
+            break;
+
+        case 5: // Material You Schemes (8 items, 4 cols x 2 rows: 0..3, 4..7)
+            if (key === Qt.Key_Right) {
+                if (focusedSchemeIndex % 4 < 3 && focusedSchemeIndex < matugenSchemes.length - 1) {
+                    focusedSchemeIndex++;
+                }
+            } else if (key === Qt.Key_Left) {
+                if (focusedSchemeIndex % 4 > 0) {
+                    focusedSchemeIndex--;
+                }
+            } else if (key === Qt.Key_Down) {
+                if (focusedSchemeIndex + 4 < matugenSchemes.length) {
+                    focusedSchemeIndex += 4;
+                } else {
+                    // Reached bottom row of schemes
+                    if (root.presets && root.presets.length > 0) {
+                        currentSection = 6;
+                        focusedPresetIndex = Math.min(focusedSchemeIndex - 4, root.presets.length - 1);
+                    }
+                }
+            } else if (key === Qt.Key_Up) {
+                if (focusedSchemeIndex >= 4) {
+                    focusedSchemeIndex -= 4;
+                } else {
+                    // Top row of schemes, move up to Section 4 (Effects)
+                    currentSection = 4;
+                    if (focusedSchemeIndex <= 1) {
+                        focusedEffectIndex = 0; // OLED
+                    } else {
+                        focusedEffectIndex = 1; // Tint
+                    }
+                }
+            }
+            break;
+
+        case 6: // Color Presets (4 cols x N rows)
             if (root.presets && root.presets.length > 0) {
-                if (key === Qt.Key_Right || key === Qt.Key_Down) {
-                    if (focusedPresetIndex < root.presets.length - 1) focusedPresetIndex++;
-                } else if (key === Qt.Key_Left || key === Qt.Key_Up) {
+                let len = root.presets.length;
+                if (key === Qt.Key_Right) {
+                    if (focusedPresetIndex < len - 1) focusedPresetIndex++;
+                } else if (key === Qt.Key_Left) {
                     if (focusedPresetIndex > 0) focusedPresetIndex--;
-                }
-                if (GlobalStates.wallpaperManager) {
-                    GlobalStates.wallpaperManager.setColorPreset(String(root.presets[focusedPresetIndex]));
+                } else if (key === Qt.Key_Down) {
+                    if (focusedPresetIndex + 4 < len) {
+                        focusedPresetIndex += 4;
+                    }
+                } else if (key === Qt.Key_Up) {
+                    if (focusedPresetIndex >= 4) {
+                        focusedPresetIndex -= 4;
+                    } else {
+                        // Top row of presets, move up to Section 5 (Schemes bottom row)
+                        currentSection = 5;
+                        focusedSchemeIndex = Math.min(4 + (focusedPresetIndex % 4), matugenSchemes.length - 1);
+                    }
                 }
             }
-            break;
-
-        case 7:
             break;
         }
+        scrollToSection(currentSection);
     }
 
     function handleActivate() {
@@ -399,7 +516,12 @@ FocusScope {
             } else if (focusedAutomationIndex === 1) {
                 if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(!GlobalStates.wallpaperPeriodicEnabled);
             } else if (focusedAutomationIndex >= 2) {
-                if (GlobalStates) GlobalStates.setWallpaperPeriodicInterval(intervalOptions[focusedAutomationIndex - 2].value);
+                if (GlobalStates) {
+                    if (!GlobalStates.wallpaperPeriodicEnabled) {
+                        GlobalStates.setWallpaperPeriodicEnabled(true);
+                    }
+                    GlobalStates.setWallpaperPeriodicInterval(intervalOptions[focusedAutomationIndex - 2].value);
+                }
             }
             break;
         case 4:
@@ -555,69 +677,10 @@ FocusScope {
                 }
 
                 Text {
-                    text: "Tab to cycle sections • Arrow keys to configure • Esc to return"
+                    text: "Arrow keys navigate all settings & sub-panels • Enter/Space to apply • Tab to jump • Esc to return"
                     font.family: Config.theme.font
                     font.pixelSize: Styling.fontSize(-3)
                     color: Colors.outline
-                }
-            }
-
-            // Light / Dark Mode Toggle Switch
-            Switch {
-                Layout.preferredWidth: 72
-                Layout.preferredHeight: 36
-                checked: Config.theme.lightMode
-                focusPolicy: Qt.NoFocus
-
-                onCheckedChanged: {
-                    Config.theme.lightMode = checked;
-                }
-
-                indicator: Rectangle {
-                    implicitWidth: 72
-                    implicitHeight: 36
-                    radius: Styling.radius(4)
-                    color: Colors.background
-
-                    Text {
-                        z: 1
-                        anchors.left: parent.left
-                        anchors.leftMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: Icons.sun
-                        color: Config.theme.lightMode ? Colors.overPrimary : Colors.overBackground
-                        font.family: Icons.font
-                        font.pixelSize: 18
-                    }
-
-                    Text {
-                        z: 1
-                        anchors.right: parent.right
-                        anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: Icons.moon
-                        color: Config.theme.lightMode ? Colors.overBackground : Colors.overPrimary
-                        font.family: Icons.font
-                        font.pixelSize: 18
-                    }
-
-                    StyledRect {
-                        variant: "primary"
-                        z: 0
-                        width: 34
-                        height: 30
-                        radius: Styling.radius(2)
-                        x: Config.theme.lightMode ? 3 : 35
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Behavior on x {
-                            enabled: Config.animDuration > 0
-                            NumberAnimation {
-                                duration: 200
-                                easing.type: Easing.OutCubic
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -693,7 +756,7 @@ FocusScope {
 
                         Text {
                             visible: root.currentSection === 0
-                            text: "Arrow keys to choose • Esc to go back"
+                            text: "Arrow keys to navigate • Enter/Space to select • Esc to go back"
                             font.family: Config.theme.font
                             font.pixelSize: Styling.fontSize(-4)
                             color: Colors.outline
@@ -1170,50 +1233,81 @@ FocusScope {
                                 spacing: 14
 
                                 // Toggle Area
-                                RowLayout {
-                                    spacing: 8
-                                    Layout.preferredWidth: 220
+                                StyledRect {
+                                    id: periodicToggleRect
+                                    Layout.preferredWidth: 230
+                                    Layout.fillHeight: true
+                                    readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 1
+                                    variant: isFocused || toggleMa.containsMouse ? "focus" : "pane"
+                                    radius: Styling.radius(3)
 
-                                    Item {
-                                        Layout.preferredWidth: 36
-                                        Layout.preferredHeight: 36
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: Icons.timer
-                                            font.family: Icons.font
-                                            font.pixelSize: 24
-                                            color: periodicCard.isPeriodic ? Colors.primary : Colors.overSurface
-                                        }
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "transparent"
+                                        border.color: Colors.primary
+                                        border.width: 2
+                                        radius: Styling.radius(3)
+                                        visible: periodicToggleRect.isFocused
                                     }
 
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 2
-
-                                        Text {
-                                            text: "Periodic Rotation"
-                                            font.family: Config.theme.font
-                                            font.pixelSize: Styling.fontSize(0)
-                                            font.weight: Font.Bold
-                                            color: Colors.overBackground
-                                        }
-
-                                        Text {
-                                            text: periodicCard.isPeriodic ? ("Rotates every " + periodicCard.periodicInt + "m") : "Automatic switching disabled"
-                                            font.family: Config.theme.font
-                                            font.pixelSize: Styling.fontSize(-3)
-                                            color: periodicCard.isPeriodic ? Colors.primary : Colors.outline
-                                        }
-                                    }
-
-                                    Switch {
-                                        checked: periodicCard.isPeriodic
-                                        focusPolicy: Qt.NoFocus
-                                        onToggled: {
+                                    MouseArea {
+                                        id: toggleMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
                                             root.currentSection = 3;
                                             root.focusedAutomationIndex = 1;
-                                            if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(checked);
+                                            if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(!periodicCard.isPeriodic);
+                                        }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            spacing: 8
+
+                                            Item {
+                                                Layout.preferredWidth: 32
+                                                Layout.preferredHeight: 32
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: Icons.timer
+                                                    font.family: Icons.font
+                                                    font.pixelSize: 22
+                                                    color: periodicCard.isPeriodic ? Colors.primary : Colors.overSurface
+                                                }
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 1
+
+                                                Text {
+                                                    text: "Periodic Rotation"
+                                                    font.family: Config.theme.font
+                                                    font.pixelSize: Styling.fontSize(0)
+                                                    font.weight: Font.Bold
+                                                    color: Colors.overBackground
+                                                }
+
+                                                Text {
+                                                    text: periodicCard.isPeriodic ? ("Rotates every " + periodicCard.periodicInt + "m") : "Automatic switching disabled"
+                                                    font.family: Config.theme.font
+                                                    font.pixelSize: Styling.fontSize(-3)
+                                                    color: periodicCard.isPeriodic ? Colors.primary : Colors.outline
+                                                }
+                                            }
+
+                                            Switch {
+                                                checked: periodicCard.isPeriodic
+                                                focusPolicy: Qt.NoFocus
+                                                onToggled: {
+                                                    root.currentSection = 3;
+                                                    root.focusedAutomationIndex = 1;
+                                                    if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(checked);
+                                                }
+                                            }
                                         }
                                     }
                                 }

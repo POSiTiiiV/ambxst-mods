@@ -40,7 +40,8 @@ Item {
 
     function getFileType(path) {
         if (!path) return "unknown";
-        var ext = path.toLowerCase().split('.').pop();
+        var clean = path.replace(/^file:\/\//, "");
+        var ext = clean.toLowerCase().split('.').pop();
         if (['jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff', 'bmp'].includes(ext)) {
             return 'image';
         } else if (['gif'].includes(ext)) {
@@ -104,16 +105,18 @@ Item {
     }
 
     // Circle Mask Engine (Iris Transitions)
-    readonly property real maxCircleRadius: Math.ceil(Math.hypot(root.width, root.height) / 2) + 20
+    readonly property real maxCircleRadius: Math.ceil(Math.hypot(root.width > 0 ? root.width : 1920, root.height > 0 ? root.height : 1080) / 2) + 50
     property real circleRadius: 0
     property bool circleMaskInverted: false
     property int activeCircleSlot: -1
 
     Item {
         id: circleMaskItem
-        width: root.width
-        height: root.height
-        visible: false
+        width: root.width > 0 ? root.width : 1920
+        height: root.height > 0 ? root.height : 1080
+        visible: true
+        opacity: 0
+        z: -100
 
         Rectangle {
             id: circleShape
@@ -138,26 +141,84 @@ Item {
         id: layersContainer
         anchors.fill: parent
 
-        // Two Image Layer Slots for seamless transitions
-        // Note: No anchors on layerRoot so that x/y position animations work!
+        // Unified Multimedia Layer Component (Image, Animated GIF, Live Video)
         component WallpaperLayer: Item {
             id: layerRoot
             width: root.width
             height: root.height
             property string imageSource: ""
-            readonly property int status: rawImg.status
+            readonly property string mediaType: root.getFileType(imageSource)
+            property var activeVideoRef: null
+            property bool videoFrameReady: false
 
+            readonly property bool isReady: {
+                if (!imageSource) return false;
+                if (mediaType === "image") {
+                    return rawImg.status === Image.Ready;
+                } else if (mediaType === "gif") {
+                    return animImgLoader.item ? animImgLoader.item.status === Image.Ready : false;
+                } else if (mediaType === "video") {
+                    return videoFrameReady || (videoCompLoader.item ? videoCompLoader.item.positionMs > 0 : false);
+                }
+                return false;
+            }
+
+            readonly property bool isError: {
+                if (!imageSource) return false;
+                if (mediaType === "image") {
+                    return rawImg.status === Image.Error;
+                } else if (mediaType === "gif") {
+                    return animImgLoader.item ? animImgLoader.item.status === Image.Error : false;
+                }
+                return false;
+            }
+
+            onImageSourceChanged: {
+                videoFrameReady = false;
+                if (imageSource === "") {
+                    activeVideoRef = null;
+                }
+            }
+
+            function notifyIfReady() {
+                if (layerRoot.imageSource !== "") {
+                    if (layerRoot.isReady) {
+                        root.onSlotImageReady(layerRoot);
+                    } else if (layerRoot.isError) {
+                        root.onSlotImageError(layerRoot);
+                    }
+                }
+            }
+
+            Timer {
+                id: videoFallbackTimer
+                interval: 120
+                repeat: false
+                running: layerRoot.mediaType === "video" && layerRoot.imageSource !== "" && !layerRoot.videoFrameReady
+                onTriggered: {
+                    if (!layerRoot.videoFrameReady) {
+                        layerRoot.videoFrameReady = true;
+                        layerRoot.notifyIfReady();
+                    }
+                }
+            }
+
+            // Static Image Renderer
             Image {
                 id: rawImg
                 anchors.fill: parent
-                source: layerRoot.imageSource ? "file://" + layerRoot.imageSource : ""
+                visible: layerRoot.mediaType === "image"
+                source: {
+                    if (!layerRoot.imageSource || layerRoot.mediaType !== "image") return "";
+                    return layerRoot.imageSource.startsWith("file://") ? layerRoot.imageSource : ("file://" + layerRoot.imageSource);
+                }
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 smooth: true
                 mipmap: true
-                sourceSize.width: root.wallpaperManager ? root.wallpaperManager.width : root.width
-                sourceSize.height: root.wallpaperManager ? root.wallpaperManager.height : root.height
-                layer.enabled: root.tintEnabled
+                sourceSize.width: (root.wallpaperManager && root.wallpaperManager.width > 0) ? root.wallpaperManager.width : (root.width > 0 ? root.width : undefined)
+                sourceSize.height: (root.wallpaperManager && root.wallpaperManager.height > 0) ? root.wallpaperManager.height : (root.height > 0 ? root.height : undefined)
+                layer.enabled: root.tintEnabled && visible
                 layer.effect: ShaderEffect {
                     property var paletteTexture: paletteTextureSource
                     property real paletteSize: root.optimizedPalette.length
@@ -166,6 +227,82 @@ Item {
 
                     vertexShader: "palette.vert.qsb"
                     fragmentShader: "palette.frag.qsb"
+                }
+
+                onStatusChanged: {
+                    if (layerRoot.mediaType === "image") {
+                        layerRoot.notifyIfReady();
+                    }
+                }
+            }
+
+            // Animated GIF Renderer (Native QtQuick AnimatedImage)
+            Loader {
+                id: animImgLoader
+                anchors.fill: parent
+                active: layerRoot.mediaType === "gif" && layerRoot.imageSource !== ""
+                sourceComponent: Component {
+                    AnimatedImage {
+                        id: animImg
+                        anchors.fill: parent
+                        source: {
+                            if (!layerRoot.imageSource) return "";
+                            return layerRoot.imageSource.startsWith("file://") ? layerRoot.imageSource : ("file://" + layerRoot.imageSource);
+                        }
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        smooth: true
+                        mipmap: true
+                        sourceSize.width: (root.wallpaperManager && root.wallpaperManager.width > 0) ? root.wallpaperManager.width : (root.width > 0 ? root.width : undefined)
+                        sourceSize.height: (root.wallpaperManager && root.wallpaperManager.height > 0) ? root.wallpaperManager.height : (root.height > 0 ? root.height : undefined)
+                        layer.enabled: root.tintEnabled
+                        layer.effect: ShaderEffect {
+                            property var paletteTexture: paletteTextureSource
+                            property real paletteSize: root.optimizedPalette.length
+                            property real texWidth: animImg.width
+                            property real texHeight: animImg.height
+
+                            vertexShader: "palette.vert.qsb"
+                            fragmentShader: "palette.frag.qsb"
+                        }
+
+                        onStatusChanged: {
+                            if (layerRoot.mediaType === "gif") {
+                                layerRoot.notifyIfReady();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Live Video Wallpaper Renderer (QtMultimedia VideoWallpaper)
+            Loader {
+                id: videoCompLoader
+                anchors.fill: parent
+                active: layerRoot.mediaType === "video" && layerRoot.imageSource !== ""
+                sourceComponent: Component {
+                    VideoWallpaper {
+                        id: videoWallpaperChild
+                        sourceFile: layerRoot.imageSource.replace(/^file:\/\//, "")
+                        tint: root.tintEnabled
+                        onRequestVideoSync: {
+                            if (root.wallpaperManager && root.wallpaperManager.requestVideoSync)
+                                root.wallpaperManager.requestVideoSync();
+                        }
+                        onPositionMsChanged: {
+                            if (positionMs > 0 && !layerRoot.videoFrameReady) {
+                                layerRoot.videoFrameReady = true;
+                                layerRoot.notifyIfReady();
+                            }
+                        }
+                        Component.onCompleted: {
+                            layerRoot.activeVideoRef = videoWallpaperChild;
+                        }
+                        Component.onDestruction: {
+                            if (layerRoot.activeVideoRef === videoWallpaperChild)
+                                layerRoot.activeVideoRef = null;
+                        }
+                    }
                 }
             }
         }
@@ -203,35 +340,14 @@ Item {
                 maskSpreadAtMin: 1.0
             }
         }
+    }
 
-        // Native QtMultimedia Video & GIF Wallpaper Player (Ambxst 1.3.6+)
-        Loader {
-            id: videoLoader
-            anchors.fill: parent
-            active: false
-            z: 2
-            sourceComponent: Component {
-                VideoWallpaper {
-                    id: videoWallpaperChild
-                    sourceFile: root.source
-                    tint: root.tintEnabled
-                    onRequestVideoSync: {
-                        if (root.wallpaperManager && root.wallpaperManager.requestVideoSync)
-                            root.wallpaperManager.requestVideoSync();
-                    }
-
-                    Component.onCompleted: {
-                        if (root.wallpaperManager)
-                            root.wallpaperManager.activeVideo = videoWallpaperChild;
-                        root.notifyShown();
-                    }
-                    Component.onDestruction: {
-                        if (root.wallpaperManager && root.wallpaperManager.activeVideo === videoWallpaperChild)
-                            root.wallpaperManager.activeVideo = null;
-                    }
-                }
-            }
-        }
+    // Automatically synchronize the active playing VideoWallpaper with WallpaperManager for lockscreen sync
+    Binding {
+        target: root.wallpaperManager
+        property: "activeVideo"
+        value: root.activeSlot === 0 ? slot0.activeVideoRef : slot1.activeVideoRef
+        when: root.wallpaperManager !== null
     }
 
     // Niri native overview blur pass (Ambxst 1.3.6+)
@@ -259,28 +375,49 @@ Item {
         }
     }
 
-    // Transition watchdog timer to wait for image readiness before triggering animation
+    function onSlotImageReady(slot) {
+        var targetSlot = activeSlot === 0 ? slot1 : slot0;
+        if (slot === targetSlot && pendingSource !== "" && !isTransitioning) {
+            readyCheckTimer.stop();
+            stallTimeout.stop();
+            startAnimation();
+        }
+    }
+
+    function onSlotImageError(slot) {
+        var targetSlot = activeSlot === 0 ? slot1 : slot0;
+        if (slot === targetSlot && pendingSource !== "") {
+            readyCheckTimer.stop();
+            stallTimeout.stop();
+            console.warn("TransitionWallpaper: Error loading media:", pendingSource);
+            finishTransition();
+        }
+    }
+
+    // Transition watchdog timer to wait for media readiness before triggering animation
     Timer {
         id: readyCheckTimer
         interval: 16
         repeat: true
         onTriggered: {
             var targetSlot = root.activeSlot === 0 ? slot1 : slot0;
-            if (targetSlot.status === Image.Ready) {
+            if (targetSlot.isReady) {
                 readyCheckTimer.stop();
+                stallTimeout.stop();
                 root.startAnimation();
-            } else if (targetSlot.status === Image.Error) {
+            } else if (targetSlot.isError) {
                 readyCheckTimer.stop();
-                console.warn("TransitionWallpaper: Error loading image:", root.pendingSource);
+                stallTimeout.stop();
+                console.warn("TransitionWallpaper: Error loading media:", root.pendingSource);
                 root.finishTransition();
             }
         }
     }
 
-    // Fallback timeout in case image loading stalls
+    // Fallback timeout in case media loading stalls
     Timer {
         id: stallTimeout
-        interval: 1000
+        interval: 5000
         repeat: false
         onTriggered: {
             if (readyCheckTimer.running) {
@@ -292,30 +429,9 @@ Item {
 
     onSourceChanged: {
         if (!source) return;
-        var fileType = getFileType(source);
-
-        if (fileType === 'video' || fileType === 'gif') {
-            stopAllAnimations();
-            isTransitioning = false;
-            readyCheckTimer.stop();
-            stallTimeout.stop();
-            slot0.opacity = 0;
-            slot1.opacity = 0;
-            slot0.imageSource = "";
-            slot1.imageSource = "";
-            activeSource = source;
-            previousSource = source;
-            videoLoader.active = true;
-            return;
-        }
-
-        // Static image
-        if (videoLoader.active) {
-            videoLoader.active = false;
-        }
 
         if (activeSource === "") {
-            // First load on boot
+            // First load on boot or initialization
             slot0.imageSource = source;
             slot0.opacity = 1.0;
             slot0.scale = 1.0;
@@ -330,7 +446,7 @@ Item {
             return;
         }
 
-        if (source === activeSource) return;
+        if (source === activeSource && !isTransitioning) return;
 
         // If currently in an animation, complete it immediately
         if (isTransitioning) {
@@ -349,8 +465,12 @@ Item {
         targetSlot.y = 0;
         targetSlot.imageSource = source;
 
-        readyCheckTimer.restart();
-        stallTimeout.restart();
+        if (targetSlot.isReady) {
+            Qt.callLater(root.startAnimation);
+        } else {
+            readyCheckTimer.restart();
+            stallTimeout.restart();
+        }
     }
 
     function stopAllAnimations() {
@@ -377,6 +497,10 @@ Item {
         var fromIndex = activeSlot;
         var toIndex = activeSlot === 0 ? 1 : 0;
         var easing = getEasingType();
+
+        var w = root.width > 0 ? root.width : (wallpaperManager && wallpaperManager.width > 0 ? wallpaperManager.width : 1920);
+        var h = root.height > 0 ? root.height : (wallpaperManager && wallpaperManager.height > 0 ? wallpaperManager.height : 1080);
+        var maxR = Math.ceil(Math.hypot(w, h) / 2) + 50;
 
         // Reset geometry & transforms
         fromSlot.x = 0;
@@ -419,7 +543,7 @@ Item {
             circleAnim.target = root;
             circleAnim.property = "circleRadius";
             circleAnim.from = 0;
-            circleAnim.to = root.maxCircleRadius;
+            circleAnim.to = maxR;
             circleAnim.duration = dur;
             circleAnim.easing.type = easing;
 
@@ -433,11 +557,11 @@ Item {
 
             activeCircleSlot = fromIndex;
             circleMaskInverted = false;
-            circleRadius = root.maxCircleRadius;
+            circleRadius = maxR;
 
             circleAnim.target = root;
             circleAnim.property = "circleRadius";
-            circleAnim.from = root.maxCircleRadius;
+            circleAnim.from = maxR;
             circleAnim.to = 0;
             circleAnim.duration = dur;
             circleAnim.easing.type = easing;
@@ -446,12 +570,12 @@ Item {
         } else if (transitionStyle === "slideLeft") {
             toSlot.z = 1;
             fromSlot.z = 0;
-            toSlot.x = root.width;
+            toSlot.x = w;
             fromSlot.x = 0;
 
             slideIn.target = toSlot;
             slideIn.property = "x";
-            slideIn.from = root.width;
+            slideIn.from = w;
             slideIn.to = 0;
             slideIn.duration = dur;
             slideIn.easing.type = easing;
@@ -459,7 +583,7 @@ Item {
             slideOut.target = fromSlot;
             slideOut.property = "x";
             slideOut.from = 0;
-            slideOut.to = -root.width;
+            slideOut.to = -w;
             slideOut.duration = dur;
             slideOut.easing.type = easing;
 
@@ -467,12 +591,12 @@ Item {
         } else if (transitionStyle === "slideRight") {
             toSlot.z = 1;
             fromSlot.z = 0;
-            toSlot.x = -root.width;
+            toSlot.x = -w;
             fromSlot.x = 0;
 
             slideIn.target = toSlot;
             slideIn.property = "x";
-            slideIn.from = -root.width;
+            slideIn.from = -w;
             slideIn.to = 0;
             slideIn.duration = dur;
             slideIn.easing.type = easing;
@@ -480,7 +604,7 @@ Item {
             slideOut.target = fromSlot;
             slideOut.property = "x";
             slideOut.from = 0;
-            slideOut.to = root.width;
+            slideOut.to = w;
             slideOut.duration = dur;
             slideOut.easing.type = easing;
 
@@ -488,12 +612,12 @@ Item {
         } else if (transitionStyle === "slideUp") {
             toSlot.z = 1;
             fromSlot.z = 0;
-            toSlot.y = root.height;
+            toSlot.y = h;
             fromSlot.y = 0;
 
             slideIn.target = toSlot;
             slideIn.property = "y";
-            slideIn.from = root.height;
+            slideIn.from = h;
             slideIn.to = 0;
             slideIn.duration = dur;
             slideIn.easing.type = easing;
@@ -501,7 +625,7 @@ Item {
             slideOut.target = fromSlot;
             slideOut.property = "y";
             slideOut.from = 0;
-            slideOut.to = -root.height;
+            slideOut.to = -h;
             slideOut.duration = dur;
             slideOut.easing.type = easing;
 
@@ -509,12 +633,12 @@ Item {
         } else if (transitionStyle === "slideDown") {
             toSlot.z = 1;
             fromSlot.z = 0;
-            toSlot.y = -root.height;
+            toSlot.y = -h;
             fromSlot.y = 0;
 
             slideIn.target = toSlot;
             slideIn.property = "y";
-            slideIn.from = -root.height;
+            slideIn.from = -h;
             slideIn.to = 0;
             slideIn.duration = dur;
             slideIn.easing.type = easing;
@@ -522,7 +646,7 @@ Item {
             slideOut.target = fromSlot;
             slideOut.property = "y";
             slideOut.from = 0;
-            slideOut.to = root.height;
+            slideOut.to = h;
             slideOut.duration = dur;
             slideOut.easing.type = easing;
 
@@ -581,10 +705,13 @@ Item {
     }
 
     function finishTransition() {
+        readyCheckTimer.stop();
+        stallTimeout.stop();
         isTransitioning = false;
         activeCircleSlot = -1;
         activeSlot = activeSlot === 0 ? 1 : 0;
         activeSource = pendingSource;
+        pendingSource = "";
 
         var currentActive = activeSlot === 0 ? slot0 : slot1;
         var currentInactive = activeSlot === 0 ? slot1 : slot0;
@@ -600,7 +727,11 @@ Item {
         currentInactive.x = 0;
         currentInactive.y = 0;
         currentInactive.z = 0;
-        currentInactive.imageSource = ""; // Free GPU texture immediately!
+        currentInactive.imageSource = ""; // Free GPU texture and unloads inactive video/gif immediately!
+
+        if (root.wallpaperManager) {
+            root.wallpaperManager.activeVideo = currentActive.activeVideoRef;
+        }
 
         notifyShown();
     }
