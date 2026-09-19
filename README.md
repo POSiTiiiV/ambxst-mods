@@ -71,16 +71,12 @@ ambxst reload
 
 ---
 
-## ⌨️ Recommended Keybindings (`hyprland.conf`)
+## ⌨️ Custom Keybindings
 
-Add these shortcuts to your compositor configuration for instant access:
+You can configure any custom shortcut in your compositor configuration (`hyprland.conf`, `niri.kdl`, `sway/config`, etc.) to trigger an instant random wallpaper transition:
 
-```ini
-# Open Wallpaper Picker directly
-bind = $mainMod, COMMA, exec, ambxst run wallpapers
-
-# Shuffle Random Wallpaper with Transition
-bind = $mainMod, W, exec, ambxst run wallpaper-random
+```bash
+ambxst run wallpaper-random
 ```
 
 ---

@@ -35,8 +35,7 @@ A premier, high-performance modification package for the [Ambxst Desktop Environ
 ### 🎲 Randomization & Background Automation
 - **Instant Shuffle Button (``)**: Integrated directly into both the wallpaper picker top bar and the Advanced Settings panel.
 - **Background Periodic Rotation**: Automated periodic wallpaper rotation with persistent intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), saved to Ambxst configuration and preserved across desktop reboots.
-- **CLI & IPC Command**: Trigger a random wallpaper anytime via terminal or scripts with `ambxst run wallpaper-random`.
-- **Hyprland / Compositor Keybind**: Effortlessly bind `SUPER + W` (or any keybind) to trigger a random wallpaper.
+- **Compositor Keybinding**: Bind any preferred shortcut to `ambxst run wallpaper-random` for instant wallpaper transitions.
 
 ### ⚙️ Dedicated In-Tab Advanced Settings Panel
 - **Seamless Modal Experience**: Replaces the wallpaper grid in-place within the dashboard tab without opening a separate popup or disruptive window.
@@ -94,17 +93,15 @@ ambxst reload
 
 ## ⌨️ Shortcuts & Navigation
 
-### Hyprland Keybinds (`hyprland.conf`)
+### Compositor Keybinding Setup
 
-```ini
-# Open Wallpaper Picker directly
-bind = $mainMod, COMMA, exec, ambxst run wallpapers
+You can configure any custom shortcut in your compositor configuration (`hyprland.conf`, `niri.kdl`, `sway/config`, etc.) to trigger an instant random wallpaper transition:
 
-# Shuffle Random Wallpaper
-bind = $mainMod, W, exec, ambxst run wallpaper-random
+```bash
+ambxst run wallpaper-random
 ```
 
-### Wallpaper Picker Controls (`SUPER + ,`)
+### Wallpaper Picker Controls
 
 | Control / Key | Action |
 | :--- | :--- |
