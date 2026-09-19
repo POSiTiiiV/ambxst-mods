@@ -31,7 +31,7 @@ A curated collection of declarative modifications, performance optimizations, an
   * Press <kbd>Enter</kbd> or <kbd>Space</kbd> to apply selections.
   * <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> jumps between section headers; <kbd>Esc</kbd> returns to wallpaper search.
   * Smooth row-by-row auto-scrolling with Wayland touchpad and mouse wheel support.
-* **⚡ 5,000+ Wallpaper Library Optimizations**:
+* **⚡ Wallpaper Library Optimizations**:
   * Eliminates redundant recursive disk sweeps on opening/closing dashboard.
   * Resolves upstream cold-start blank screen issue when invoking `SUPER + ,`.
 
