@@ -105,13 +105,26 @@ index eb6e9ccd..f2fd65a0 100644
          let visibilities = Visibilities.getForScreen(screenName);
          return visibilities.launcher || visibilities.dashboard || visibilities.overview || visibilities.presets;
 diff --git a/modules/services/GlobalShortcuts.qml b/modules/services/GlobalShortcuts.qml
-index b1aa3be4..8b04f91b 100644
+index b1aa3be4..e421dc4d 100644
 --- a/modules/services/GlobalShortcuts.qml
 +++ b/modules/services/GlobalShortcuts.qml
-@@ -50,6 +50,10 @@ QtObject {
+@@ -46,10 +46,21 @@ QtObject {
+ 
+             // Dashboard
+             case "dashboard": toggleDashboardTab(0); break;
+-            case "wallpapers": toggleDashboardTab(1); break;
++            case "wallpapers":
++            case "dashboard-wallpapers":
++                if (Visibilities.currentActiveModule === "dashboard" && GlobalStates.dashboardCurrentTab === 1 && GlobalStates.wallpapersTabShowSettings) {
++                    GlobalStates.wallpapersTabShowSettings = false;
++                } else {
++                    GlobalStates.wallpapersTabShowSettings = false;
++                    toggleDashboardTab(1);
++                }
++                break;
              case "assistant": toggleAssistant(); break;
              case "dashboard-widgets": toggleDashboardTab(0); break;
-             case "dashboard-wallpapers": toggleDashboardTab(1); break;
+-            case "dashboard-wallpapers": toggleDashboardTab(1); break;
 +            case "wallpaper-random":
 +            case "random-wallpaper":
 +                GlobalStates.triggerRandomWallpaper();
@@ -197,7 +210,7 @@ index 099acb04..7e28b63e 100644
      }
  
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index 195fd45f..c1db9796 100644
+index 195fd45f..6133c5e1 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -11,6 +11,7 @@ import qs.config
@@ -208,7 +221,7 @@ index 195fd45f..c1db9796 100644
  
      // Propiedades personalizadas para la funcionalidad del componente.
      property string searchText: ""
-@@ -30,6 +31,27 @@ FocusScope {
+@@ -30,6 +31,43 @@ FocusScope {
          return perScreen[currentScreenName] !== undefined;
      }
  
@@ -223,8 +236,24 @@ index 195fd45f..c1db9796 100644
 +
 +    property bool showSettings: GlobalStates.wallpapersTabShowSettings
 +
++    Connections {
++        target: GlobalStates
++        function onDashboardOpenChanged() {
++            if (!GlobalStates.dashboardOpen) {
++                wallpapersTabRoot.showSettings = false;
++            }
++        }
++        function onWallpapersTabShowSettingsChanged() {
++            if (wallpapersTabRoot.showSettings !== GlobalStates.wallpapersTabShowSettings) {
++                wallpapersTabRoot.showSettings = GlobalStates.wallpapersTabShowSettings;
++            }
++        }
++    }
++
 +    onShowSettingsChanged: {
-+        GlobalStates.wallpapersTabShowSettings = showSettings;
++        if (GlobalStates.wallpapersTabShowSettings !== showSettings) {
++            GlobalStates.wallpapersTabShowSettings = showSettings;
++        }
 +        if (showSettings) {
 +            wallpaperSettingsView.forceActiveFocus();
 +        } else {
@@ -236,13 +265,14 @@ index 195fd45f..c1db9796 100644
      function togglePerScreenMode() {
          if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
          
-@@ -74,9 +96,24 @@ FocusScope {
+@@ -74,9 +112,24 @@ FocusScope {
              }
          },
          {
 -            id: "schemeSelector",
 +            id: "dayNightToggle",
-+            focusFunc: function () {
+             focusFunc: function () {
+-                schemeSelector.openAndFocus();
 +                dayNightContainer.keyboardNavigationActive = true;
 +                dayNightBtn.forceActiveFocus();
 +            }
@@ -256,14 +286,13 @@ index 195fd45f..c1db9796 100644
 +        },
 +        {
 +            id: "settingsButton",
-             focusFunc: function () {
--                schemeSelector.openAndFocus();
++            focusFunc: function () {
 +                settingsBtnContainer.keyboardNavigationActive = true;
 +                settingsBtn.forceActiveFocus();
              }
          },
          {
-@@ -91,7 +128,12 @@ FocusScope {
+@@ -91,7 +144,12 @@ FocusScope {
  
      // Función para enfocar el campo de búsqueda
      function focusSearch() {
@@ -276,7 +305,7 @@ index 195fd45f..c1db9796 100644
          wallpaperSearchInput.focusInput();
  
          // Restaurar índice válido si está en -1 y hay wallpapers
-@@ -128,8 +170,11 @@ FocusScope {
+@@ -128,8 +186,11 @@ FocusScope {
  
      // Función para navegar hacia atrás (Shift+Tab)
      function focusPreviousElement() {
@@ -290,13 +319,14 @@ index 195fd45f..c1db9796 100644
              focusSearch();
          } else {
              currentFocusIndex--;
-@@ -155,24 +200,10 @@ FocusScope {
+@@ -155,24 +216,10 @@ FocusScope {
  
      // Función para encontrar el índice del wallpaper actual en la lista filtrada
      function findCurrentWallpaperIndex() {
 -        if (!GlobalStates.wallpaperManager) {
--            return -1;
--        }
++        if (!activeWallpaperPath) {
+             return -1;
+         }
 -
 -        let perScreen = GlobalStates.wallpaperManager.perScreenWallpapers || {};
 -        let currentWallpaper = "";
@@ -308,16 +338,15 @@ index 195fd45f..c1db9796 100644
 -        }
 -
 -        if (!currentWallpaper) {
-+        if (!activeWallpaperPath) {
-             return -1;
-         }
+-            return -1;
+-        }
 -
 -        return filteredWallpapers.indexOf(currentWallpaper);
 +        return filteredWallpapers.indexOf(activeWallpaperPath);
      }
  
      // Llama a focusSearch una vez que el componente se ha completado.
-@@ -180,10 +211,10 @@ FocusScope {
+@@ -180,10 +227,12 @@ FocusScope {
          centerTimer.start();
      }
  
@@ -326,11 +355,13 @@ index 195fd45f..c1db9796 100644
      onVisibleChanged: {
          if (visible) {
 -            if (GlobalStates.wallpaperManager) {
++            showSettings = false;
++            GlobalStates.wallpapersTabShowSettings = false;
 +            if (GlobalStates.wallpaperManager && (!GlobalStates.wallpaperManager.subfolderFilters || GlobalStates.wallpaperManager.subfolderFilters.length === 0)) {
                  console.log("WallpapersTab became visible, updating subfolders");
                  GlobalStates.wallpaperManager.scanSubfolders();
              }
-@@ -192,10 +223,10 @@ FocusScope {
+@@ -192,10 +241,10 @@ FocusScope {
          }
      }
  
@@ -343,7 +374,7 @@ index 195fd45f..c1db9796 100644
          repeat: false
          onTriggered: {
              centerCurrentWallpaper();
-@@ -769,14 +800,240 @@ FocusScope {
+@@ -769,14 +818,240 @@ FocusScope {
                  }
              }
  
@@ -588,7 +619,7 @@ index 195fd45f..c1db9796 100644
                  SchemeSelector {
                      id: schemeSelector
                      anchors.top: parent.top
-@@ -864,9 +1121,9 @@ FocusScope {
+@@ -864,9 +1139,9 @@ FocusScope {
                  highlightFollowsCurrentItem: !isScrolling
  
                  // Optimizaciones de rendimiento
@@ -601,7 +632,7 @@ index 195fd45f..c1db9796 100644
                  reuseItems: true
  
                  // Configuración de scroll optimizada
-@@ -940,20 +1197,7 @@ FocusScope {
+@@ -940,20 +1215,7 @@ FocusScope {
                                  clip: true
  
                                  property var currentItem: wallpaperGrid.currentItem
@@ -623,7 +654,7 @@ index 195fd45f..c1db9796 100644
                                  property bool showHoveredItem: currentItem && currentItem.isHovered && !visible
  
                                  visible: selectedIndex >= 0 || showHoveredItem
-@@ -1056,32 +1300,20 @@ FocusScope {
+@@ -1056,32 +1318,20 @@ FocusScope {
                      height: wallpaperGrid.cellHeight
                      color: "transparent"
  
@@ -660,7 +691,7 @@ index 195fd45f..c1db9796 100644
                          return itemBottom + buffer >= gridTop && itemTop - buffer <= gridBottom;
                      }
  
-@@ -1122,7 +1354,7 @@ FocusScope {
+@@ -1122,7 +1372,7 @@ FocusScope {
                                              to: 360
                                              duration: 1000
                                              loops: Animation.Infinite
@@ -669,7 +700,7 @@ index 195fd45f..c1db9796 100644
                                          }
                                      }
                                  }
-@@ -1227,4 +1459,16 @@ FocusScope {
+@@ -1227,4 +1477,16 @@ FocusScope {
              }
          }
      }
