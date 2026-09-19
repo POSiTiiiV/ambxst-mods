@@ -721,32 +721,7 @@ FocusScope {
                             color: root.currentSection === 0 ? Colors.primary : Colors.overBackground
                         }
 
-                        StyledRect {
-                            visible: root.currentSection === 0
-                            variant: "focus"
-                            Layout.preferredHeight: 18
-                            Layout.preferredWidth: 54
-                            radius: Styling.radius(2)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "ACTIVE"
-                                font.family: Config.theme.font
-                                font.pixelSize: Styling.fontSize(-4)
-                                font.weight: Font.Bold
-                                color: Colors.primary
-                            }
-                        }
-
                         Item { Layout.fillWidth: true }
-
-                        Text {
-                            visible: root.currentSection === 0
-                            text: "Arrow keys to navigate • Enter/Space to select • Esc to go back"
-                            font.family: Config.theme.font
-                            font.pixelSize: Styling.fontSize(-4)
-                            color: Colors.outline
-                        }
                     }
 
                     GridLayout {
@@ -847,16 +822,11 @@ FocusScope {
                     Layout.fillWidth: true
                     spacing: 14
 
-                    readonly property real col1Width: Math.max(0, Math.floor((width - spacing) / 2))
-                    readonly property real col2Width: Math.max(0, width - spacing - col1Width)
-
                     // Section 1: Easing Curves
                     ColumnLayout {
                         id: sectionEasing
-                        Layout.minimumWidth: sectionEasingAndDuration.col1Width
-                        Layout.maximumWidth: sectionEasingAndDuration.col1Width
-                        Layout.preferredWidth: sectionEasingAndDuration.col1Width
                         Layout.fillWidth: true
+                        Layout.preferredWidth: 1
                         spacing: 6
 
                         RowLayout {
@@ -869,23 +839,6 @@ FocusScope {
                                 font.pixelSize: Styling.fontSize(-2)
                                 font.weight: Font.Bold
                                 color: root.currentSection === 1 ? Colors.primary : Colors.overBackground
-                            }
-
-                            StyledRect {
-                                visible: root.currentSection === 1
-                                variant: "focus"
-                                Layout.preferredHeight: 18
-                                Layout.preferredWidth: 54
-                                radius: Styling.radius(2)
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "ACTIVE"
-                                    font.family: Config.theme.font
-                                    font.pixelSize: Styling.fontSize(-4)
-                                    font.weight: Font.Bold
-                                    color: Colors.primary
-                                }
                             }
 
                             Item { Layout.fillWidth: true }
@@ -980,10 +933,8 @@ FocusScope {
                     // Section 2: Duration Column
                     ColumnLayout {
                         id: sectionDuration
-                        Layout.minimumWidth: sectionEasingAndDuration.col2Width
-                        Layout.maximumWidth: sectionEasingAndDuration.col2Width
-                        Layout.preferredWidth: sectionEasingAndDuration.col2Width
                         Layout.fillWidth: true
+                        Layout.preferredWidth: 1
                         spacing: 6
 
                         RowLayout {
@@ -996,23 +947,6 @@ FocusScope {
                                 font.pixelSize: Styling.fontSize(-2)
                                 font.weight: Font.Bold
                                 color: root.currentSection === 2 ? Colors.primary : Colors.overBackground
-                            }
-
-                            StyledRect {
-                                visible: root.currentSection === 2
-                                variant: "focus"
-                                Layout.preferredHeight: 18
-                                Layout.preferredWidth: 54
-                                radius: Styling.radius(2)
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "ACTIVE"
-                                    font.family: Config.theme.font
-                                    font.pixelSize: Styling.fontSize(-4)
-                                    font.weight: Font.Bold
-                                    color: Colors.primary
-                                }
                             }
 
                             Item { Layout.fillWidth: true }
@@ -1112,23 +1046,6 @@ FocusScope {
                             font.pixelSize: Styling.fontSize(-2)
                             font.weight: Font.Bold
                             color: root.currentSection === 3 ? Colors.primary : Colors.overBackground
-                        }
-
-                        StyledRect {
-                            visible: root.currentSection === 3
-                            variant: "focus"
-                            Layout.preferredHeight: 18
-                            Layout.preferredWidth: 54
-                            radius: Styling.radius(2)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "ACTIVE"
-                                font.family: Config.theme.font
-                                font.pixelSize: Styling.fontSize(-4)
-                                font.weight: Font.Bold
-                                color: Colors.primary
-                            }
                         }
 
                         Item { Layout.fillWidth: true }
@@ -1395,23 +1312,6 @@ FocusScope {
                             color: root.currentSection === 4 ? Colors.primary : Colors.overBackground
                         }
 
-                        StyledRect {
-                            visible: root.currentSection === 4
-                            variant: "focus"
-                            Layout.preferredHeight: 18
-                            Layout.preferredWidth: 54
-                            radius: Styling.radius(2)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "ACTIVE"
-                                font.family: Config.theme.font
-                                font.pixelSize: Styling.fontSize(-4)
-                                font.weight: Font.Bold
-                                color: Colors.primary
-                            }
-                        }
-
                         Item { Layout.fillWidth: true }
                     }
 
@@ -1503,23 +1403,6 @@ FocusScope {
                             font.pixelSize: Styling.fontSize(-2)
                             font.weight: Font.Bold
                             color: root.currentSection === 5 ? Colors.primary : Colors.overBackground
-                        }
-
-                        StyledRect {
-                            visible: root.currentSection === 5
-                            variant: "focus"
-                            Layout.preferredHeight: 18
-                            Layout.preferredWidth: 54
-                            radius: Styling.radius(2)
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "ACTIVE"
-                                font.family: Config.theme.font
-                                font.pixelSize: Styling.fontSize(-4)
-                                font.weight: Font.Bold
-                                color: Colors.primary
-                            }
                         }
 
                         Item { Layout.fillWidth: true }
