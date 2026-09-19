@@ -176,18 +176,10 @@ FocusScope {
             let targetY = targetItem.y;
             let targetH = targetItem.height;
             let viewH = scrollArea.height;
-            let maxScroll = Math.max(0, scrollArea.contentHeight - viewH);
-
-            // If navigating to presets (or schemes if no presets), scroll fully to maxScroll to prevent bottom clipping
-            if (sec === 5 || (sec === 4 && (!root.presets || root.presets.length === 0))) {
-                smoothScrollTo(maxScroll);
-                return;
-            }
-
             if (targetY < scrollArea.contentY) {
                 smoothScrollTo(Math.max(0, targetY - 10));
             } else if (targetY + targetH > scrollArea.contentY + viewH) {
-                smoothScrollTo(Math.min(maxScroll, targetY + targetH - viewH + 30));
+                smoothScrollTo(Math.min(maxScroll, targetY + targetH - viewH + 16));
             }
         }
     }
@@ -448,8 +440,6 @@ FocusScope {
                     if (focusedPresetIndex + 4 < len) {
                         focusedPresetIndex += 4;
                     }
-                    // Auto-scroll all the way down on lower preset rows
-                    smoothScrollTo(Math.max(0, scrollArea.contentHeight - scrollArea.height));
                 } else if (key === Qt.Key_Up) {
                     if (focusedPresetIndex >= 4) {
                         focusedPresetIndex -= 4;
@@ -655,7 +645,7 @@ FocusScope {
             Layout.fillHeight: true
             clip: true
             contentWidth: width
-            contentHeight: settingsColumn.implicitHeight + 24
+            contentHeight: settingsColumn.implicitHeight + 12
             boundsBehavior: Flickable.StopAtBounds
 
             ScrollBar.vertical: ScrollBar {
@@ -1547,12 +1537,6 @@ FocusScope {
                             }
                         }
                     }
-                }
-
-                // Bottom padding spacer to ensure full visibility of preset items when scrolled to the end
-                Item {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 72
                 }
             }
         }
