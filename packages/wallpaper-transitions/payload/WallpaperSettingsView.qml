@@ -157,12 +157,18 @@ FocusScope {
     }
 
     function scrollToSection(sec) {
-        if (sec === 0 || sec === 6) {
+        if (sec === 0 && focusedStyleIndex <= 1) {
+            smoothScrollTo(0);
+            return;
+        }
+        if (sec === 6) {
             smoothScrollTo(0);
             return;
         }
         let targetItem = null;
-        if (sec === 1 || sec === 2) {
+        if (sec === 0) {
+            targetItem = sectionStyle;
+        } else if (sec === 1 || sec === 2) {
             targetItem = sectionEasingAndDuration;
         } else if (sec === 3) {
             targetItem = sectionAutomation;
@@ -173,13 +179,40 @@ FocusScope {
         }
 
         if (targetItem) {
-            let targetY = targetItem.y;
-            let targetH = targetItem.height;
-            let viewH = scrollArea.height;
-            if (targetY < scrollArea.contentY) {
-                smoothScrollTo(Math.max(0, targetY - 10));
-            } else if (targetY + targetH > scrollArea.contentY + viewH) {
-                smoothScrollTo(Math.min(maxScroll, targetY + targetH - viewH + 16));
+            let itemTop = targetItem.y;
+            let itemBottom = targetItem.y + targetItem.height;
+
+            if (sec === 0) {
+                let row = Math.floor(focusedStyleIndex / 2);
+                itemTop = row === 0 ? targetItem.y : (targetItem.y + 28 + (row * 58));
+                itemBottom = itemTop + 52;
+            } else if (sec === 1) {
+                let row = Math.floor(focusedEasingIndex / 2);
+                itemTop = row === 0 ? targetItem.y : (targetItem.y + 28 + (row * 54));
+                itemBottom = itemTop + 48;
+            } else if (sec === 2) {
+                itemTop = targetItem.y;
+                itemBottom = targetItem.y + 76;
+            } else if (sec === 3) {
+                itemTop = targetItem.y;
+                itemBottom = targetItem.y + targetItem.height;
+            } else if (sec === 4) {
+                let row = Math.floor(focusedSchemeIndex / 4);
+                itemTop = row === 0 ? targetItem.y : (targetItem.y + 28 + (row * 46));
+                itemBottom = itemTop + 40;
+            } else if (sec === 5 && root.presets && root.presets.length > 0) {
+                let row = Math.floor(focusedPresetIndex / 4);
+                itemTop = row === 0 ? targetItem.y : (targetItem.y + 28 + (row * 44));
+                itemBottom = itemTop + 38;
+            }
+
+            let viewH = scrollArea.height > 0 ? scrollArea.height : 500;
+            let maxScroll = Math.max(0, scrollArea.contentHeight - viewH);
+
+            if (itemTop < scrollArea.contentY + 10) {
+                smoothScrollTo(Math.max(0, itemTop - 12));
+            } else if (itemBottom > scrollArea.contentY + viewH - 10) {
+                smoothScrollTo(Math.min(maxScroll, itemBottom - viewH + 16));
             }
         }
     }
@@ -658,7 +691,7 @@ FocusScope {
                 target: null
                 acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                 onWheel: (event) => {
-                    let delta = event.angleDelta.y;
+                    let delta = (event.pixelDelta && event.pixelDelta.y !== 0) ? event.pixelDelta.y : event.angleDelta.y;
                     if (delta !== 0) {
                         root.scrollBy(-delta);
                     }
@@ -757,7 +790,7 @@ FocusScope {
                                         root.focusedStyleIndex = index;
                                         root.updateSetting("transitionStyle", modelData.id);
                                     }
-                                    onWheel: (wheel) => root.scrollBy(-wheel.angleDelta.y)
+                                    onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                     RowLayout {
                                         anchors.fill: parent
@@ -894,7 +927,7 @@ FocusScope {
                                             root.focusedEasingIndex = index;
                                             root.updateSetting("easingCurve", modelData.id);
                                         }
-                                        onWheel: (wheel) => root.scrollBy(-wheel.angleDelta.y)
+                                        onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                         RowLayout {
                                             anchors.fill: parent
@@ -1018,7 +1051,7 @@ FocusScope {
                                             root.focusedSpeedIndex = index;
                                             root.updateSetting("duration", modelData.value);
                                         }
-                                        onWheel: (wheel) => root.scrollBy(-wheel.angleDelta.y)
+                                        onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                         RowLayout {
                                             anchors.centerIn: parent
@@ -1133,6 +1166,7 @@ FocusScope {
                                     root.focusedAutomationIndex = 0;
                                     if (GlobalStates) GlobalStates.triggerRandomWallpaper();
                                 }
+                                onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                 RowLayout {
                                     anchors.fill: parent
@@ -1213,6 +1247,7 @@ FocusScope {
                                             root.focusedAutomationIndex = 1;
                                             if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(!periodicCard.isPeriodic);
                                         }
+                                        onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                         RowLayout {
                                             anchors.fill: parent
@@ -1316,6 +1351,7 @@ FocusScope {
                                                     root.focusedAutomationIndex = index + 2;
                                                     if (GlobalStates) GlobalStates.setWallpaperPeriodicInterval(modelData.value);
                                                 }
+                                                onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                                 Text {
                                                     anchors.centerIn: parent
@@ -1415,6 +1451,7 @@ FocusScope {
                                             GlobalStates.wallpaperManager.setMatugenScheme(modelData.id);
                                         }
                                     }
+                                    onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                     RowLayout {
                                         anchors.centerIn: parent
@@ -1524,6 +1561,7 @@ FocusScope {
                                             GlobalStates.wallpaperManager.setColorPreset(String(modelData));
                                         }
                                     }
+                                    onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                     Text {
                                         anchors.centerIn: parent
