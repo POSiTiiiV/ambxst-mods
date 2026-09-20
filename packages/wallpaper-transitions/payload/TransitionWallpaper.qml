@@ -117,6 +117,7 @@ Item {
         visible: true
         opacity: 0
         z: -100
+        clip: true
 
         Rectangle {
             id: circleShape
@@ -731,6 +732,9 @@ Item {
 
         if (root.wallpaperManager) {
             root.wallpaperManager.activeVideo = currentActive.activeVideoRef;
+            if (typeof root.wallpaperManager.onWallpaperTransitionFinished === "function") {
+                root.wallpaperManager.onWallpaperTransitionFinished(activeSource);
+            }
         }
 
         notifyShown();

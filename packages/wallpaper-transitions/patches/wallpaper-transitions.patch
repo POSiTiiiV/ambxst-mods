@@ -323,10 +323,92 @@ index 66cbd27d..4886cc80 100644
                          visible: (root.selectedMod?.error ?? "") !== ""
                              || (root.selectedMod?.compatibilityError ?? "") !== ""
 diff --git a/modules/widgets/dashboard/wallpapers/Wallpaper.qml b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
-index 099acb04..7e28b63e 100644
+index 099acb04..cbc54237 100644
 --- a/modules/widgets/dashboard/wallpapers/Wallpaper.qml
 +++ b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
-@@ -1050,10 +1050,11 @@ PanelWindow {
+@@ -42,6 +42,16 @@ PanelWindow {
+     property int thumbnailsVersion: 0
+ 
+     property var activeVideo: null
++    property bool deferMatugen: true
++
++    function onWallpaperTransitionFinished(path) {
++        if (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager !== wallpaper) {
++            GlobalStates.wallpaperManager.onWallpaperTransitionFinished(path);
++            return;
++        }
++        runMatugenForCurrentWallpaper();
++        generateLockscreenFrame(path || currentWallpaper);
++    }
+ 
+     // Blurs the wallpaper while niri's native overview is open. The overview
+     // backdrop shows this surface (place-within-backdrop), so blurring it here
+@@ -323,16 +333,22 @@ PanelWindow {
+                     currentIndex = pathIndex;
+                     wallpaperConfig.adapter.currentWall = path;
+                     currentWallpaper = path;
+-                    runMatugenForCurrentWallpaper();
++                    if (!deferMatugen) {
++                        runMatugenForCurrentWallpaper();
++                    }
+                 }
+             } else {
+                 // Global fallback target
+                 currentIndex = pathIndex;
+                 wallpaperConfig.adapter.currentWall = path;
+                 currentWallpaper = path;
+-                runMatugenForCurrentWallpaper();
++                if (!deferMatugen) {
++                    runMatugenForCurrentWallpaper();
++                }
++            }
++            if (!deferMatugen) {
++                generateLockscreenFrame(path);
+             }
+-            generateLockscreenFrame(path);
+         } else {
+             console.warn("Wallpaper path not found in current list:", path);
+         }
+@@ -364,8 +380,10 @@ PanelWindow {
+         currentIndex = (currentIndex + 1) % wallpaperPaths.length;
+         currentWallpaper = wallpaperPaths[currentIndex];
+         wallpaperConfig.adapter.currentWall = wallpaperPaths[currentIndex];
+-        runMatugenForCurrentWallpaper();
+-        generateLockscreenFrame(wallpaperPaths[currentIndex]);
++        if (!deferMatugen) {
++            runMatugenForCurrentWallpaper();
++            generateLockscreenFrame(wallpaperPaths[currentIndex]);
++        }
+     }
+ 
+     function previousWallpaper() {
+@@ -380,8 +398,10 @@ PanelWindow {
+         currentIndex = currentIndex === 0 ? wallpaperPaths.length - 1 : currentIndex - 1;
+         currentWallpaper = wallpaperPaths[currentIndex];
+         wallpaperConfig.adapter.currentWall = wallpaperPaths[currentIndex];
+-        runMatugenForCurrentWallpaper();
+-        generateLockscreenFrame(wallpaperPaths[currentIndex]);
++        if (!deferMatugen) {
++            runMatugenForCurrentWallpaper();
++            generateLockscreenFrame(wallpaperPaths[currentIndex]);
++        }
+     }
+ 
+     function setWallpaperByIndex(index) {
+@@ -395,8 +415,10 @@ PanelWindow {
+             currentIndex = index;
+             currentWallpaper = wallpaperPaths[currentIndex];
+             wallpaperConfig.adapter.currentWall = wallpaperPaths[currentIndex];
+-            runMatugenForCurrentWallpaper();
+-            generateLockscreenFrame(wallpaperPaths[currentIndex]);
++            if (!deferMatugen) {
++                runMatugenForCurrentWallpaper();
++                generateLockscreenFrame(wallpaperPaths[currentIndex]);
++            }
+         }
+     }
+ 
+@@ -1050,10 +1072,11 @@ PanelWindow {
              }
          }
  
