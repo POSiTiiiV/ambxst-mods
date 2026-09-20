@@ -1,6 +1,7 @@
 # Wallpaper Transitions for Ambxst
 
 [![Ambxst Compatibility](https://img.shields.io/badge/Ambxst-1.3.6%2B-blue.svg)](https://github.com/Axenide/Ambxst)
+[![Version](https://img.shields.io/badge/Version-1.3.2-brightgreen.svg)](ambxst.mod.json)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Wayland%20%7C%20Hyprland%20%7C%20Niri-purple.svg)]()
 
@@ -30,15 +31,18 @@ A premier, high-performance modification package for the [Ambxst Desktop Environ
 - **Unified Multi-Format Media Support**:
   - Supports transitions between **Static Images** (`.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`), **Animated GIFs** (hardware-accelerated looping `AnimatedImage`), and **Live Videos** (`.mp4`, `.webm`, `.mov`, `.mkv`).
   - Seamless transitions between any combination: `Image ↔ Image`, `Image ↔ GIF`, `GIF ↔ GIF`, `Image ↔ Video`, `GIF ↔ Video`, and `Video ↔ Video`.
-  - **Zero Black Flash / Zero Stutter**: Dual-slot renderer detects video frame readiness (`positionMs > 0` with timer fallback) before starting the transition, preventing black frames or decoding stalls.
+- **⚡ 100% Stutter-Free Performance Architecture**:
+  - **Deferred Matugen & Lockscreen Extraction**: In stock Ambxst, Matugen palette generation triggers a compositor reload (`hyprctl reload`) and ffmpeg lockscreen extraction when a wallpaper change begins. The transition engine defers Matugen and ffmpeg execution until the animation finishes (`finishTransition()`), completely eliminating mid-flight compositor hitches and frame drops.
+  - **Zero Black Flash**: Dual-slot renderer detects video frame readiness (`positionMs > 0` with timer fallback) before starting the transition, preventing black frames or decoding stalls.
+  - **FBO Boundary Clipping**: Circular mask textures are clipped to viewport bounds (`clip: true`) to eliminate offscreen texture reallocation churn during iris transitions.
 
 ### 🎲 Randomization & Background Automation
+- **Compositor Keybinding (`SUPER + SHIFT + W`)**: Trigger instant random wallpaper transitions respecting your chosen directory pool.
 - **Top-Bar Shuffle Button (``)**: Instant single-click random wallpaper trigger directly in the wallpaper picker top bar.
 - **Fair Shuffle Deck Engine (Fisher-Yates)**: True zero-repetition permutation shuffle deck. Every wallpaper in your active pool (e.g. 85 videos) plays exactly once before any repeat can occur, with seamless reshuffle boundary protection.
 - **Customizable Directory & Category Pool Filtering**: Choose one or multiple directories and categories (`Images`, `GIFs`, `Videos`, or custom subfolders like `cool`, `extra`, etc.) for both random shuffle and periodic rotation. If no categories are chosen, it defaults to your full library.
-- **Live Pool Matching Badge**: Real-time counter displays how many wallpapers match your active rotation pool.
+- **Live Pool Matching Badge**: Real-time counter displays how many wallpapers match your active rotation pool (e.g. `Pool: 85 wallpapers`).
 - **Background Periodic Rotation**: Automated periodic wallpaper rotation with persistent intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), saved to Ambxst configuration and preserved across desktop reboots.
-- **Compositor Keybinding**: Bind any preferred shortcut to `ambxst run wallpaper-random` for instant wallpaper transitions respecting your chosen directory pool.
 
 ### ⚙️ Dedicated In-Tab Advanced Settings Panel
 - **Seamless Modal Experience**: Replaces the wallpaper grid in-place within the dashboard tab without opening a separate popup or disruptive window.
@@ -99,10 +103,21 @@ ambxst reload
 
 ### Compositor Keybinding Setup
 
-You can configure any custom shortcut in your compositor configuration (`hyprland.conf`, `niri.kdl`, `sway/config`, etc.) to trigger an instant random wallpaper transition:
+You can configure a custom shortcut in your compositor configuration to trigger an instant random wallpaper transition:
 
-```bash
-ambxst run wallpaper-random
+#### Hyprland (Lua Config — `~/.config/hypr/lua/custom/custom_binds.lua`)
+```lua
+hl.bind("SUPER + SHIFT + W", hl.dsp.exec_cmd("ambxst run wallpaper-random"))
+```
+
+#### Hyprland (Standard Config — `~/.config/hypr/hyprland.conf`)
+```ini
+bind = SUPER SHIFT, W, exec, ambxst run wallpaper-random
+```
+
+#### Niri (`~/.config/niri/config.kdl`)
+```kdl
+Mod+Shift+W { spawn "ambxst" "run" "wallpaper-random"; }
 ```
 
 ### Wallpaper Picker Controls
@@ -111,7 +126,7 @@ ambxst run wallpaper-random
 | :--- | :--- |
 | <kbd>Tab</kbd> | Cycle forwards: `Search` → `Monitor (eDP-1)` → `OLED` → `Tint` → `Day/Night` → `Shuffle ()` → `Settings (⚙)` → `Filters` |
 | <kbd>Shift + Tab</kbd> | Cycle backwards through all header controls |
-| <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> | Navigate wallpaper grid items |
+| <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> | Navigate wallpaper grid items (or arrow keys directly when focused in search) |
 | <kbd>Enter</kbd> / <kbd>Space</kbd> | Apply selected wallpaper / trigger focused button |
 | <kbd>Esc</kbd> | Return to search bar / close dashboard |
 
@@ -119,8 +134,8 @@ ambxst run wallpaper-random
 
 | Control / Key | Action |
 | :--- | :--- |
-| <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> | Jump between major section headers (`Transition Style` ↔ `Easing Curve` ↔ `Duration` ↔ `Automation & Rotation` ↔ `Color Schemes` ↔ `Presets` ↔ `Back Button`) |
-| <kbd>↑</kbd> <kbd>↓</kbd> | **2D Vertical Navigation**: Traverses seamlessly between items and across sections |
+| <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> | Jump between major section headers (`Transition Style` ↔ `Easing Curve` ↔ `Duration` ↔ `Automation & Rotation` ↔ `Material You Schemes` ↔ `Presets` ↔ `Back Button`) |
+| <kbd>↑</kbd> <kbd>↓</kbd> | **2D Vertical Navigation**: Traverses seamlessly between items and across sections without premature application |
 | <kbd>←</kbd> <kbd>→</kbd> | **2D Horizontal Navigation**: Moves between cards, interval pills, and pool chips |
 | <kbd>Space</kbd> / <kbd>Enter</kbd> | Toggle periodic rotation switch, interval pills, or random pool source chips |
 | <kbd>Esc</kbd> | Return directly to the wallpaper picker and focus the search bar |
@@ -146,6 +161,15 @@ ambxst ipc call GlobalStates.setWallpaperTransitionDuration '[500]'
 
 # Toggle automated periodic wallpaper rotation
 ambxst ipc call GlobalStates.setWallpaperPeriodicEnabled '[true]'
+
+# Set rotation interval in minutes (e.g. 15 minutes)
+ambxst ipc call GlobalStates.setWallpaperPeriodicInterval '[15]'
+
+# Filter random shuffle & periodic pool by categories/subfolders (e.g. videos and subfolder 'cool')
+ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '["video", "subfolder_cool"]'
+
+# Reset pool filter to all wallpapers in library
+ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '[]'
 ```
 
 ---
