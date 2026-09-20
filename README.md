@@ -29,7 +29,7 @@ A curated collection of declarative modifications, performance optimizations, an
     ```bash
     ambxst run wallpaper-random
     ```
-  * **Customizable Directory & Category Pool Filtering**: Choose one or multiple directories and categories (`Images`, `GIFs`, `Videos`, or custom subfolders like `cool`, `extra`, etc.) for random shuffle and periodic rotation with real-time pool matching badges.
+  * **Customizable Directory & Category Pool Filtering**: Dynamically discovers your library's organization! Choose one or multiple media categories (`Images`, `GIFs`, `Videos`) or any custom subdirectories you organize in your wallpapers folder (e.g. `nature`, `anime`, `minimal`, etc.) for random shuffle and periodic rotation with real-time pool matching badges.
   * **Fair Fisher-Yates Shuffle Deck**: True zero-repetition permutation shuffle deck. Every wallpaper in your active pool plays exactly once before any repeat can occur.
   * **Automated Periodic Rotation**: Cycle wallpapers automatically in the background at configurable intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), persisting across reboots.
 * **⌨️ Full 2D Spatial Keyboard Navigation**:
@@ -123,7 +123,7 @@ ambxst ipc call GlobalStates.setWallpaperPeriodicEnabled '[true]'
 ambxst ipc call GlobalStates.setWallpaperPeriodicInterval '[15]'
 
 # Filter random shuffle & periodic pool by categories or subfolders (empty array = all wallpapers)
-ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '["video", "subfolder_cool"]'
+ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '["video", "subfolder_nature"]'
 ```
 
 ---

@@ -39,8 +39,8 @@ A premier, high-performance modification package for the [Ambxst Desktop Environ
 ### 🎲 Randomization & Background Automation
 - **Compositor Keybinding (`SUPER + SHIFT + W`)**: Trigger instant random wallpaper transitions respecting your chosen directory pool.
 - **Top-Bar Shuffle Button (``)**: Instant single-click random wallpaper trigger directly in the wallpaper picker top bar.
-- **Fair Shuffle Deck Engine (Fisher-Yates)**: True zero-repetition permutation shuffle deck. Every wallpaper in your active pool (e.g. 85 videos) plays exactly once before any repeat can occur, with seamless reshuffle boundary protection.
-- **Customizable Directory & Category Pool Filtering**: Choose one or multiple directories and categories (`Images`, `GIFs`, `Videos`, or custom subfolders like `cool`, `extra`, etc.) for both random shuffle and periodic rotation. If no categories are chosen, it defaults to your full library.
+- **Fair Shuffle Deck Engine (Fisher-Yates)**: True zero-repetition permutation shuffle deck. Every wallpaper in your active pool plays exactly once before any repeat can occur, with seamless reshuffle boundary protection.
+- **Customizable Directory & Category Pool Filtering**: Dynamically discovers your wallpaper folder structure! Select one or multiple media categories (`Images`, `GIFs`, `Videos`) or any custom subdirectories you organize in your wallpapers folder (e.g. `nature`, `anime`, `minimal`, etc.) for both random shuffle and periodic rotation. If no categories are selected, it defaults to your full library.
 - **Live Pool Matching Badge**: Real-time counter displays how many wallpapers match your active rotation pool (e.g. `Pool: 85 wallpapers`).
 - **Background Periodic Rotation**: Automated periodic wallpaper rotation with persistent intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), saved to Ambxst configuration and preserved across desktop reboots.
 
@@ -165,8 +165,8 @@ ambxst ipc call GlobalStates.setWallpaperPeriodicEnabled '[true]'
 # Set rotation interval in minutes (e.g. 15 minutes)
 ambxst ipc call GlobalStates.setWallpaperPeriodicInterval '[15]'
 
-# Filter random shuffle & periodic pool by categories/subfolders (e.g. videos and subfolder 'cool')
-ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '["video", "subfolder_cool"]'
+# Filter random shuffle & periodic pool by categories/subfolders (e.g. videos and subfolder 'nature')
+ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '["video", "subfolder_nature"]'
 
 # Reset pool filter to all wallpapers in library
 ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '[]'
