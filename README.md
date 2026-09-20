@@ -4,47 +4,41 @@ A curated collection of declarative modifications, performance optimizations, an
 
 ---
 
-## 📦 Available Packages
+## Available Packages
 
 | Package | Name | Version | Ambxst | Description | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| [`wallpaper-transitions`](packages/wallpaper-transitions) | **Wallpaper Transitions** | `v1.3.2` | `>=1.3.0` | Animated transitions (10 styles, 6 easing curves), stutter-free rendering, GIF/video support, instant shuffle (`ambxst run wallpaper-random`), custom directory pools, automated rotation, 2D keyboard navigation, and cold-start optimizations. | ✅ Active (`v1.3.2`) |
+| [`wallpaper-transitions`](packages/wallpaper-transitions) | **Wallpaper Transitions** | `v1.3.2` | `>=1.3.0` | Animated transitions (10 styles, 6 easing curves), GIF/video support, random shuffle, custom directory pools, automated rotation, keyboard navigation, and fast browsing. | Active (`v1.3.2`) |
 
 ---
 
-## 🌟 Featured Mod: Wallpaper Transitions (`v1.3.2`)
+## Featured Mod: Wallpaper Transitions (`v1.3.2`)
 
-> Full documentation, architecture breakdown, and IPC reference available in [`packages/wallpaper-transitions/README.md`](packages/wallpaper-transitions/README.md).
+> Full documentation and IPC reference available in [`packages/wallpaper-transitions/README.md`](packages/wallpaper-transitions/README.md).
 
-### ✨ Highlights & Capabilities
-* **🎬 10 Cinematic Transition Styles**: Crossfade, Circle Expand (Iris Out), Circle Shrink (Iris In), Slide Left / Right / Up / Down, Zoom & Fade, Ambxst Pulse, and Instant Swap.
-* **📐 6 Precision Easing Curves & Speeds**: Cubic, Ease In-Out, Exponential, Elastic Back, Quadratic, and Linear with duration presets from `200ms` (Fast) up to `1.2s` (Cinematic).
-* **⚡ 100% Stutter-Free Animation Engine**:
-  * **Deferred Matugen & Lockwall Extraction**: Defers palette generation and ffmpeg lockscreen extraction until the transition finishes (`finishTransition()`), completely eliminating `hyprctl reload` compositor freezes mid-flight.
-  * **FBO Boundary Clipping**: Circular mask textures are clipped to viewport bounds (`clip: true`) to prevent offscreen texture reallocation churn during large-diameter iris transitions.
-* **🎞️ Unified Multi-Format Media Support**: Seamless crossfades between **Static Images**, **Animated GIFs**, and **Live Videos** (`.mp4`, `.webm`, `.mov`, `.mkv`) with zero black frames or decoding stalls.
-* **🎲 Randomization, Directory Pools & Periodic Rotation**:
-  * **Compositor Keybinding (`SUPER + SHIFT + W`)**: Trigger instant random wallpaper transitions respecting your chosen directory pool.
-  * **Top-Bar Shuffle Button (``)**: Pick a random wallpaper on demand directly from the UI or via CLI/IPC:
-    ```bash
-    ambxst run wallpaper-random
-    ```
-  * **Customizable Directory & Category Pool Filtering**: Dynamically discovers your library's organization! Choose one or multiple media categories (`Images`, `GIFs`, `Videos`) or any custom subdirectories you organize in your wallpapers folder (e.g. `nature`, `anime`, `minimal`, etc.) for random shuffle and periodic rotation with real-time pool matching badges.
-  * **Fair Fisher-Yates Shuffle Deck**: True zero-repetition permutation shuffle deck. Every wallpaper in your active pool plays exactly once before any repeat can occur.
-  * **Automated Periodic Rotation**: Cycle wallpapers automatically in the background at configurable intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), persisting across reboots.
-* **⌨️ Full 2D Spatial Keyboard Navigation**:
-  * Arrow keys (<kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd>) navigate across all sub-settings without forcing premature changes.
-  * Press <kbd>Space</kbd> or <kbd>Enter</kbd> to toggle periodic rotation, intervals, and directory pool chips.
-  * <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> jumps between section headers; <kbd>Esc</kbd> returns smoothly to wallpaper search.
-  * Smooth row-by-row auto-scrolling with Wayland touchpad and mouse wheel support.
-* **⚡ Wallpaper Library Optimizations (5,000+ Wallpapers)**:
-  * Lazy-loads settings view dynamically on demand, completely bypassing instantiation when browsing wallpapers.
-  * Eliminates redundant recursive disk sweeps on opening/closing dashboard.
-  * Resolves upstream cold-start blank screen issue when invoking `SUPER + ,`.
+### Features
+* **10 Transition Styles**: Crossfade, Circle Expand (Iris Out), Circle Shrink (Iris In), Slide (Left, Right, Up, Down), Zoom & Fade, Ambxst Pulse, and Instant Swap.
+* **6 Easing Curves & Speeds**: Cubic, Ease In-Out, Exponential, Elastic Back, Quadratic, and Linear with duration presets from Fast (200ms) to Cinematic (1200ms).
+* **Smooth & Stutter-Free**: Fluid animations with zero black frames, decoder stalls, or compositor pauses.
+* **Full Media Support**: Seamless transitions across static images, animated GIFs, and live videos.
+* **Randomization & Automation**:
+  * **Top-Bar Shuffle**: Change to a random wallpaper with a single click in the wallpaper picker.
+  * **Custom Directory & Category Pools**: Choose which categories (Images, GIFs, Videos) or specific subfolders your random and periodic wallpapers are picked from.
+  * **Fair Shuffle Deck**: Ensures every wallpaper in your active pool plays before repeating.
+  * **Periodic Rotation**: Automatically cycle wallpapers at configurable intervals (1m to 2h).
+  * **Compositor Shortcut Support**: Can be bound to any shortcut in your compositor configuration via `ambxst run wallpaper-random`.
+* **Full Keyboard Navigation**:
+  * Arrow keys navigate settings and wallpaper grid cleanly.
+  * <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> jumps between section headers.
+  * <kbd>Space</kbd> / <kbd>Enter</kbd> toggles options.
+  * <kbd>Esc</kbd> returns directly to wallpaper search.
+* **Fast & Responsive Browsing**:
+  * On-demand settings loading keeps the wallpaper picker fast to open.
+  * Smooth scrolling with optimized virtualization and caching.
 
 ---
 
-## 🚀 Quick Install
+## Quick Install
 
 ### Install via Ambxst CLI
 
@@ -57,9 +51,9 @@ ambxst mods enable positive.wallpaper-transitions
 ambxst reload
 ```
 
-### Install via Ambxst GUI (Settings)
+### Install via Ambxst GUI
 
-1. Open **Ambxst Settings** (<kbd>SUPER + S</kbd> or via Dashboard).
+1. Open **Ambxst Settings** (`SUPER + S` or via Dashboard).
 2. Navigate to **Mods** in the left sidebar.
 3. Paste the package URL into the **Package source** field:
    ```text
@@ -78,9 +72,9 @@ ambxst reload
 
 ---
 
-## ⌨️ Custom Keybindings
+## Keybinding Setup (Optional)
 
-Bind a shortcut in your compositor configuration to trigger an instant random wallpaper transition:
+To trigger a random wallpaper transition with a keyboard shortcut, bind `ambxst run wallpaper-random` in your compositor configuration:
 
 ### Hyprland (Lua Config — `~/.config/hypr/lua/custom/custom_binds.lua`)
 ```lua
@@ -99,22 +93,22 @@ Mod+Shift+W { spawn "ambxst" "run" "wallpaper-random"; }
 
 ---
 
-## 🛠️ CLI & IPC API Reference
+## CLI & IPC API Reference
 
-Automate wallpaper actions directly from terminal, scripts, or status bars:
+Automate actions directly from terminal scripts, status bars, or keybindings:
 
 ```bash
-# Open wallpaper picker (always resets directly to wallpaper selector grid)
+# Open wallpaper picker (always returns to the wallpaper grid)
 ambxst run wallpapers
 
-# Shuffle to a random wallpaper immediately with transition
+# Shuffle to a random wallpaper
 ambxst run wallpaper-random
 
 # Set transition style via IPC
 ambxst ipc call GlobalStates.setWallpaperTransitionStyle '["circleOut"]'
 
 # Set transition duration in milliseconds
-ambxst ipc call GlobalStates.setWallpaperTransitionDuration '[500]'
+ambxst ipc call GlobalStates.setWallpaperTransitionDuration '[400]'
 
 # Toggle automated periodic background rotation
 ambxst ipc call GlobalStates.setWallpaperPeriodicEnabled '[true]'
@@ -122,13 +116,13 @@ ambxst ipc call GlobalStates.setWallpaperPeriodicEnabled '[true]'
 # Set rotation interval in minutes (e.g. 15 minutes)
 ambxst ipc call GlobalStates.setWallpaperPeriodicInterval '[15]'
 
-# Filter random shuffle & periodic pool by categories or subfolders (empty array = all wallpapers)
+# Filter random and periodic pool by categories or subfolders (empty array = all wallpapers)
 ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '["video", "subfolder_nature"]'
 ```
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 Following the official Ambxst declarative mod manager specification:
 
@@ -150,6 +144,6 @@ ambxst-mods/
 
 ---
 
-## 📜 License
+## License
 
 All packages in this repository are licensed under the [MIT License](LICENSE) unless explicitly specified otherwise within a package directory.
