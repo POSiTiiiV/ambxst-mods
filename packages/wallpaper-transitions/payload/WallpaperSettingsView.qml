@@ -110,16 +110,44 @@ FocusScope {
         if (filters.length === 0) {
             return "Pool: " + allPaths.length + " (All)";
         }
+        let basePath = (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.wallpaperDir) ? GlobalStates.wallpaperManager.wallpaperDir : "";
+        if (basePath && !basePath.endsWith("/")) basePath += "/";
+
+        let hasImage = filters.includes("image");
+        let hasGif = filters.includes("gif");
+        let hasVideo = filters.includes("video");
+        let subfilters = [];
+        for (let j = 0; j < filters.length; j++) {
+            let f = filters[j];
+            if (f.startsWith("subfolder_")) {
+                subfilters.push(f.replace("subfolder_", ""));
+            } else if (f !== "image" && f !== "gif" && f !== "video") {
+                subfilters.push(f);
+            }
+        }
+
         let count = 0;
         for (let i = 0; i < allPaths.length; i++) {
             let p = allPaths[i];
-            let fileType = (GlobalStates.wallpaperManager.getFileType ? GlobalStates.wallpaperManager.getFileType(p) : "").toLowerCase();
-            let subfolder = GlobalStates.wallpaperManager.getSubfolderFromPath ? GlobalStates.wallpaperManager.getSubfolderFromPath(p) : "";
-            for (let j = 0; j < filters.length; j++) {
-                let f = filters[j];
-                if (f === fileType || (f.startsWith("subfolder_") && subfolder === f.replace("subfolder_", "")) || subfolder === f) {
-                    count++;
-                    break;
+            let ext = p.substring(p.lastIndexOf('.') + 1).toLowerCase();
+            let isImg = (ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'webp' || ext === 'bmp' || ext === 'tif' || ext === 'tiff');
+            let isG = (ext === 'gif');
+            let isV = (ext === 'mp4' || ext === 'webm' || ext === 'mov' || ext === 'avi' || ext === 'mkv');
+
+            if ((hasImage && isImg) || (hasGif && isG) || (hasVideo && isV)) {
+                count++;
+                continue;
+            }
+
+            if (subfilters.length > 0 && basePath) {
+                let rel = p.startsWith(basePath) ? p.substring(basePath.length) : p;
+                let slashIdx = rel.indexOf('/');
+                if (slashIdx !== -1) {
+                    let topDir = rel.substring(0, slashIdx);
+                    if (subfilters.includes(topDir)) {
+                        count++;
+                        continue;
+                    }
                 }
             }
         }

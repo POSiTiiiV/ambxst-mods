@@ -1,8 +1,8 @@
 diff --git a/modules/globals/GlobalStates.qml b/modules/globals/GlobalStates.qml
-index eb6e9ccd..0d7f3394 100644
+index eb6e9ccd..99f1b7bf 100644
 --- a/modules/globals/GlobalStates.qml
 +++ b/modules/globals/GlobalStates.qml
-@@ -190,6 +190,139 @@ Singleton {
+@@ -190,6 +190,190 @@ Singleton {
          wallpaperSelectedIndex = -1;
      }
  
@@ -56,6 +56,9 @@ index eb6e9ccd..0d7f3394 100644
 +        root.setWallpaperRandomSourceFilters(cur);
 +    }
 +
++    property var wallpaperShuffleDeck: []
++    property string wallpaperShufflePoolKey: ""
++
 +    function triggerRandomWallpaper() {
 +        if (!wallpaperManager || !wallpaperManager.wallpaperPaths || wallpaperManager.wallpaperPaths.length === 0) return;
 +        let allPaths = wallpaperManager.wallpaperPaths;
@@ -64,14 +67,41 @@ index eb6e9ccd..0d7f3394 100644
 +        let paths = allPaths;
 +        let activeFilters = (root.wallpaperRandomSourceFilters && Array.isArray(root.wallpaperRandomSourceFilters)) ? root.wallpaperRandomSourceFilters : [];
 +        if (activeFilters.length > 0) {
++            let basePath = wallpaperManager.wallpaperDir || "";
++            if (basePath && !basePath.endsWith("/")) basePath += "/";
++
++            let hasImage = activeFilters.includes("image");
++            let hasGif = activeFilters.includes("gif");
++            let hasVideo = activeFilters.includes("video");
++            let subfilters = [];
++            for (let j = 0; j < activeFilters.length; j++) {
++                let f = activeFilters[j];
++                if (f.startsWith("subfolder_")) {
++                    subfilters.push(f.replace("subfolder_", ""));
++                } else if (f !== "image" && f !== "gif" && f !== "video") {
++                    subfilters.push(f);
++                }
++            }
++
 +            let filtered = allPaths.filter(function(path) {
-+                let fileType = (wallpaperManager.getFileType ? wallpaperManager.getFileType(path) : "").toLowerCase();
-+                let subfolder = wallpaperManager.getSubfolderFromPath ? wallpaperManager.getSubfolderFromPath(path) : "";
-+                for (let i = 0; i < activeFilters.length; i++) {
-+                    let f = activeFilters[i];
-+                    if (f === fileType) return true;
-+                    if (f.startsWith("subfolder_") && subfolder === f.replace("subfolder_", "")) return true;
-+                    if (subfolder === f) return true;
++                let ext = path.substring(path.lastIndexOf('.') + 1).toLowerCase();
++                let isImg = (ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'webp' || ext === 'bmp' || ext === 'tif' || ext === 'tiff');
++                let isG = (ext === 'gif');
++                let isV = (ext === 'mp4' || ext === 'webm' || ext === 'mov' || ext === 'avi' || ext === 'mkv');
++
++                if ((hasImage && isImg) || (hasGif && isG) || (hasVideo && isV)) {
++                    return true;
++                }
++
++                if (subfilters.length > 0 && basePath) {
++                    let rel = path.startsWith(basePath) ? path.substring(basePath.length) : path;
++                    let slashIdx = rel.indexOf('/');
++                    if (slashIdx !== -1) {
++                        let topDir = rel.substring(0, slashIdx);
++                        if (subfilters.includes(topDir)) {
++                            return true;
++                        }
++                    }
 +                }
 +                return false;
 +            });
@@ -85,20 +115,41 @@ index eb6e9ccd..0d7f3394 100644
 +            : ((wallpaperManager.screen && wallpaperManager.screen.name) ? wallpaperManager.screen.name : (wallpaperManager.currentScreenName || ""));
 +        let perScreen = wallpaperManager.perScreenWallpapers || {};
 +        let isPerScreen = (screenName !== "" && perScreen[screenName] !== undefined);
-+
 +        let curPath = isPerScreen ? perScreen[screenName] : ((wallpaperManager.effectiveWallpaper !== undefined && wallpaperManager.effectiveWallpaper !== "") ? wallpaperManager.effectiveWallpaper : (wallpaperManager.currentWallpaper || ""));
-+        let curIndex = paths.indexOf(curPath);
-+        if (curIndex === -1) curIndex = wallpaperManager.currentIndex >= 0 ? wallpaperManager.currentIndex : wallpaperSelectedIndex;
 +
-+        let nextIndex = 0;
-+        if (paths.length > 1) {
-+            nextIndex = Math.floor(Math.random() * paths.length);
-+            if (nextIndex === curIndex) {
-+                nextIndex = (nextIndex + 1) % paths.length;
-+            }
++        // Shuffle Deck management: 100% fair random permutation without repetition
++        let poolKey = activeFilters.slice().sort().join("|") + ":" + paths.length;
++        if (root.wallpaperShufflePoolKey !== poolKey || !Array.isArray(root.wallpaperShuffleDeck)) {
++            root.wallpaperShuffleDeck = [];
++            root.wallpaperShufflePoolKey = poolKey;
 +        }
 +
-+        let nextWallpaper = paths[nextIndex];
++        if (root.wallpaperShuffleDeck.length === 0) {
++            let deck = paths.slice();
++            // Fisher-Yates shuffle
++            for (let i = deck.length - 1; i > 0; i--) {
++                let j = Math.floor(Math.random() * (i + 1));
++                let temp = deck[i];
++                deck[i] = deck[j];
++                deck[j] = temp;
++            }
++            // Avoid repeating curPath on reshuffle boundary
++            if (deck.length > 1 && deck[0] === curPath) {
++                let swapIdx = 1 + Math.floor(Math.random() * (deck.length - 1));
++                let temp = deck[0];
++                deck[0] = deck[swapIdx];
++                deck[swapIdx] = temp;
++            }
++            root.wallpaperShuffleDeck = deck;
++        }
++
++        let nextWallpaper = root.wallpaperShuffleDeck.shift();
++        if (nextWallpaper === curPath && root.wallpaperShuffleDeck.length > 0) {
++            let alt = root.wallpaperShuffleDeck.shift();
++            root.wallpaperShuffleDeck.push(nextWallpaper);
++            nextWallpaper = alt;
++        }
++
 +        if (isPerScreen) {
 +            wallpaperManager.setWallpaper(nextWallpaper, screenName);
 +        } else {
@@ -289,7 +340,7 @@ index 099acb04..7e28b63e 100644
      }
  
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index 195fd45f..d2897dce 100644
+index 195fd45f..11d08678 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -11,6 +11,7 @@ import qs.config
@@ -300,7 +351,7 @@ index 195fd45f..d2897dce 100644
  
      // Propiedades personalizadas para la funcionalidad del componente.
      property string searchText: ""
-@@ -30,6 +31,47 @@ FocusScope {
+@@ -30,6 +31,49 @@ FocusScope {
          return perScreen[currentScreenName] !== undefined;
      }
  
@@ -334,7 +385,9 @@ index 195fd45f..d2897dce 100644
 +            GlobalStates.wallpapersTabShowSettings = showSettings;
 +        }
 +        if (showSettings) {
-+            wallpaperSettingsView.forceActiveFocus();
++            if (settingsLoader.item) {
++                settingsLoader.item.forceActiveFocus();
++            }
 +        } else {
 +            wallpapersTabRoot.forceActiveFocus();
 +            wallpapersTabRoot.focusSearch();
@@ -348,7 +401,7 @@ index 195fd45f..d2897dce 100644
      function togglePerScreenMode() {
          if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
          
-@@ -74,9 +116,24 @@ FocusScope {
+@@ -74,9 +118,24 @@ FocusScope {
              }
          },
          {
@@ -375,12 +428,14 @@ index 195fd45f..d2897dce 100644
              }
          },
          {
-@@ -91,7 +148,12 @@ FocusScope {
+@@ -91,7 +150,14 @@ FocusScope {
  
      // Función para enfocar el campo de búsqueda
      function focusSearch() {
 +        if (showSettings) {
-+            wallpaperSettingsView.forceActiveFocus();
++            if (settingsLoader.item) {
++                settingsLoader.item.forceActiveFocus();
++            }
 +            return;
 +        }
          currentFocusIndex = -1;
@@ -388,7 +443,7 @@ index 195fd45f..d2897dce 100644
          wallpaperSearchInput.focusInput();
  
          // Restaurar índice válido si está en -1 y hay wallpapers
-@@ -128,8 +190,11 @@ FocusScope {
+@@ -128,8 +194,11 @@ FocusScope {
  
      // Función para navegar hacia atrás (Shift+Tab)
      function focusPreviousElement() {
@@ -402,7 +457,7 @@ index 195fd45f..d2897dce 100644
              focusSearch();
          } else {
              currentFocusIndex--;
-@@ -155,24 +220,10 @@ FocusScope {
+@@ -155,24 +224,10 @@ FocusScope {
  
      // Función para encontrar el índice del wallpaper actual en la lista filtrada
      function findCurrentWallpaperIndex() {
@@ -429,35 +484,39 @@ index 195fd45f..d2897dce 100644
      }
  
      // Llama a focusSearch una vez que el componente se ha completado.
-@@ -180,10 +231,12 @@ FocusScope {
+@@ -180,12 +235,18 @@ FocusScope {
          centerTimer.start();
      }
  
 -    // Actualizar subcarpetas cuando la pestaña se haga visible
-+    // Actualizar subcarpetas cuando la pestaña se haga visible (solo si no se han escaneado)
++    property bool subfoldersScanned: false
++
++    // Actualizar subcarpetas cuando la pestaña se haga visible (solo una vez en cold start)
      onVisibleChanged: {
          if (visible) {
 -            if (GlobalStates.wallpaperManager) {
+-                console.log("WallpapersTab became visible, updating subfolders");
+-                GlobalStates.wallpaperManager.scanSubfolders();
 +            showSettings = false;
 +            GlobalStates.wallpapersTabShowSettings = false;
-+            if (GlobalStates.wallpaperManager && (!GlobalStates.wallpaperManager.subfolderFilters || GlobalStates.wallpaperManager.subfolderFilters.length === 0)) {
-                 console.log("WallpapersTab became visible, updating subfolders");
-                 GlobalStates.wallpaperManager.scanSubfolders();
++            if (!subfoldersScanned && GlobalStates.wallpaperManager) {
++                subfoldersScanned = true;
++                if (!GlobalStates.wallpaperManager.subfolderFilters || GlobalStates.wallpaperManager.subfolderFilters.length === 0) {
++                    GlobalStates.wallpaperManager.scanSubfolders();
++                }
              }
-@@ -192,10 +245,10 @@ FocusScope {
-         }
-     }
- 
--    // Timer para asegurar que el centrado ocurre después de que el GridView esté listo
-+    // Timer para asegurar que el centrado ocurre suavemente después de la animación de apertura
+             // Reposicionar al wallpaper actual cuando se hace visible
+             centerTimer.restart();
+@@ -195,7 +256,7 @@ FocusScope {
+     // Timer para asegurar que el centrado ocurre después de que el GridView esté listo
      Timer {
          id: centerTimer
 -        interval: 50
-+        interval: 220
++        interval: 40
          repeat: false
          onTriggered: {
              centerCurrentWallpaper();
-@@ -769,14 +822,240 @@ FocusScope {
+@@ -769,14 +830,240 @@ FocusScope {
                  }
              }
  
@@ -702,7 +761,7 @@ index 195fd45f..d2897dce 100644
                  SchemeSelector {
                      id: schemeSelector
                      anchors.top: parent.top
-@@ -864,9 +1143,9 @@ FocusScope {
+@@ -864,9 +1151,9 @@ FocusScope {
                  highlightFollowsCurrentItem: !isScrolling
  
                  // Optimizaciones de rendimiento
@@ -715,7 +774,7 @@ index 195fd45f..d2897dce 100644
                  reuseItems: true
  
                  // Configuración de scroll optimizada
-@@ -940,20 +1219,7 @@ FocusScope {
+@@ -940,20 +1227,7 @@ FocusScope {
                                  clip: true
  
                                  property var currentItem: wallpaperGrid.currentItem
@@ -737,7 +796,7 @@ index 195fd45f..d2897dce 100644
                                  property bool showHoveredItem: currentItem && currentItem.isHovered && !visible
  
                                  visible: selectedIndex >= 0 || showHoveredItem
-@@ -1056,32 +1322,20 @@ FocusScope {
+@@ -1056,32 +1330,20 @@ FocusScope {
                      height: wallpaperGrid.cellHeight
                      color: "transparent"
  
@@ -774,7 +833,7 @@ index 195fd45f..d2897dce 100644
                          return itemBottom + buffer >= gridTop && itemTop - buffer <= gridBottom;
                      }
  
-@@ -1122,7 +1376,7 @@ FocusScope {
+@@ -1122,7 +1384,7 @@ FocusScope {
                                              to: 360
                                              duration: 1000
                                              loops: Animation.Infinite
@@ -783,24 +842,34 @@ index 195fd45f..d2897dce 100644
                                          }
                                      }
                                  }
-@@ -1227,4 +1481,20 @@ FocusScope {
+@@ -1227,4 +1489,30 @@ FocusScope {
              }
          }
      }
 +
-+    WallpaperSettingsView {
-+        id: wallpaperSettingsView
++    Loader {
++        id: settingsLoader
 +        anchors.fill: parent
-+        visible: wallpapersTabRoot.showSettings
++        active: wallpapersTabRoot.showSettings
++        visible: active
 +        z: 2000
-+        onBackClicked: {
-+            wallpapersTabRoot.showSettings = false;
-+            wallpapersTabRoot.forceActiveFocus();
-+            wallpapersTabRoot.focusSearch();
-+            Qt.callLater(function() {
-+                wallpapersTabRoot.forceActiveFocus();
-+                wallpapersTabRoot.focusSearch();
-+            });
++        sourceComponent: Component {
++            WallpaperSettingsView {
++                onBackClicked: {
++                    wallpapersTabRoot.showSettings = false;
++                    wallpapersTabRoot.forceActiveFocus();
++                    wallpapersTabRoot.focusSearch();
++                    Qt.callLater(function() {
++                        wallpapersTabRoot.forceActiveFocus();
++                        wallpapersTabRoot.focusSearch();
++                    });
++                }
++            }
++        }
++        onLoaded: {
++            if (item) {
++                item.forceActiveFocus();
++            }
 +        }
 +    }
  }

@@ -34,6 +34,7 @@ A premier, high-performance modification package for the [Ambxst Desktop Environ
 
 ### 🎲 Randomization & Background Automation
 - **Top-Bar Shuffle Button (``)**: Instant single-click random wallpaper trigger directly in the wallpaper picker top bar.
+- **Fair Shuffle Deck Engine (Fisher-Yates)**: True zero-repetition permutation shuffle deck. Every wallpaper in your active pool (e.g. 85 videos) plays exactly once before any repeat can occur, with seamless reshuffle boundary protection.
 - **Customizable Directory & Category Pool Filtering**: Choose one or multiple directories and categories (`Images`, `GIFs`, `Videos`, or custom subfolders like `cool`, `extra`, etc.) for both random shuffle and periodic rotation. If no categories are chosen, it defaults to your full library.
 - **Live Pool Matching Badge**: Real-time counter displays how many wallpapers match your active rotation pool.
 - **Background Periodic Rotation**: Automated periodic wallpaper rotation with persistent intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), saved to Ambxst configuration and preserved across desktop reboots.
@@ -54,6 +55,7 @@ A premier, high-performance modification package for the [Ambxst Desktop Environ
 
 ### ⚡ Massive Library Performance Optimizations (5,000+ Wallpapers)
 - **Zero-Lag Opening & Closing**:
+  - **Lazy-Loaded Settings**: The settings view is loaded dynamically via `Loader` only when requested, completely bypassing instantiation and computation when browsing wallpapers.
   - **Eliminated Redundant Disk Sweeps**: Stock Ambxst triggered a blocking `find -L` sweep via `scanSubfolders()` every time the wallpaper tab was opened. The mod guards this so scans only run on initial cold start or when explicitly required, eliminating tab open lag.
   - **Singleton Active Path Matching**: Replaced per-delegate recursive dictionary lookups across thousands of grid items with a singleton `activeWallpaperPath` property, drastically reducing CPU overhead.
   - **Expanded Virtualization Buffers**: Increased `cacheBuffer` and display margins to eliminate delegate creation churn during rapid scrolling.
