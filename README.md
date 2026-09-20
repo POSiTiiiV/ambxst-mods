@@ -12,7 +12,7 @@ A curated collection of declarative modifications, performance optimizations, an
 
 ---
 
-## 🌟 Featured Mod: Wallpaper Transitions (`v1.2.0`)
+## 🌟 Featured Mod: Wallpaper Transitions (`v1.3.0`)
 
 > Full documentation, architecture breakdown, and IPC reference available in [`packages/wallpaper-transitions/README.md`](packages/wallpaper-transitions/README.md).
 
@@ -20,15 +20,16 @@ A curated collection of declarative modifications, performance optimizations, an
 * **🎬 10 Cinematic Transition Styles**: Crossfade, Iris In / Iris Out, Slide Left / Right / Up / Down, Zoom & Fade, Ambxst Pulse, and Instant Swap.
 * **📐 6 Precision Easing Curves & Speeds**: Cubic, Ease In-Out, Exponential, Elastic Back, Quadratic, and Linear with duration presets from `200ms` (Fast) up to `1.2s` (Cinematic).
 * **🎞️ Unified Multi-Format Media Support**: Seamless crossfades between **Static Images**, **Animated GIFs**, and **Live Videos** (`.mp4`, `.webm`, `.mov`, `.mkv`) with zero black frames or decoding stalls.
-* **🎲 Randomization & Periodic Rotation**:
-  * **Instant Shuffle Button (``)**: Pick a random wallpaper on demand from the UI or via CLI/IPC:
+* **🎲 Randomization, Directory Pools & Periodic Rotation**:
+  * **Top-Bar Shuffle Button (``)**: Pick a random wallpaper on demand from the UI or via CLI/IPC:
     ```bash
     ambxst run wallpaper-random
     ```
+  * **Customizable Directory Pools**: Select one or multiple directories and categories (`Images`, `GIFs`, `Videos`, or custom subfolders like `cool`, `extra`, etc.) for random shuffle and periodic rotation with real-time pool matching counters.
   * **Automated Periodic Rotation**: Cycle wallpapers automatically in the background at configurable intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), persisting across reboots.
 * **⌨️ Full 2D Spatial Keyboard Navigation**:
   * Arrow keys (<kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd>) navigate across all sub-settings without forcing premature changes.
-  * Press <kbd>Enter</kbd> or <kbd>Space</kbd> to apply selections.
+  * Press <kbd>Space</kbd> or <kbd>Enter</kbd> to toggle periodic rotation, intervals, and directory pool chips.
   * <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> jumps between section headers; <kbd>Esc</kbd> returns to wallpaper search.
   * Smooth row-by-row auto-scrolling with Wayland touchpad and mouse wheel support.
 * **⚡ Wallpaper Library Optimizations**:
