@@ -154,6 +154,22 @@ FocusScope {
         return "Pool: " + count + " wallpapers";
     }
 
+    property string matchingCountText: "Pool: (Calculating...)"
+
+    function updateMatchingCount() {
+        if (!root.visible) return;
+        matchingCountText = getMatchingCountText();
+    }
+
+    Connections {
+        target: GlobalStates
+        function onWallpaperRandomSourceFiltersChanged() {
+            if (root.visible) {
+                root.updateMatchingCount();
+            }
+        }
+    }
+
     readonly property var matugenSchemes: [
         { id: "scheme-content", label: "Content" },
         { id: "scheme-expressive", label: "Expressive" },
@@ -656,6 +672,10 @@ FocusScope {
             root.forceActiveFocus();
             currentSection = 0;
             syncSectionFocus(0);
+            updateMatchingCount();
+            if (GlobalStates && GlobalStates.wallpaperManager && (!GlobalStates.wallpaperManager.subfolderFilters || GlobalStates.wallpaperManager.subfolderFilters.length === 0)) {
+                GlobalStates.wallpaperManager.scanSubfolders();
+            }
         }
     }
 
@@ -1381,8 +1401,7 @@ FocusScope {
                                     Text {
                                         id: countText
                                         anchors.centerIn: parent
-                                        readonly property var currentFilters: GlobalStates ? GlobalStates.wallpaperRandomSourceFilters : []
-                                        text: root.getMatchingCountText()
+                                        text: root.matchingCountText
                                         font.family: Config.theme.font
                                         font.pixelSize: Styling.fontSize(-3)
                                         font.weight: Font.Medium

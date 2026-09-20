@@ -340,7 +340,7 @@ index 099acb04..7e28b63e 100644
      }
  
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index 195fd45f..11d08678 100644
+index 195fd45f..01040f66 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -11,6 +11,7 @@ import qs.config
@@ -351,7 +351,7 @@ index 195fd45f..11d08678 100644
  
      // Propiedades personalizadas para la funcionalidad del componente.
      property string searchText: ""
-@@ -30,6 +31,49 @@ FocusScope {
+@@ -30,6 +31,47 @@ FocusScope {
          return perScreen[currentScreenName] !== undefined;
      }
  
@@ -385,9 +385,7 @@ index 195fd45f..11d08678 100644
 +            GlobalStates.wallpapersTabShowSettings = showSettings;
 +        }
 +        if (showSettings) {
-+            if (settingsLoader.item) {
-+                settingsLoader.item.forceActiveFocus();
-+            }
++            wallpaperSettingsView.forceActiveFocus();
 +        } else {
 +            wallpapersTabRoot.forceActiveFocus();
 +            wallpapersTabRoot.focusSearch();
@@ -401,7 +399,7 @@ index 195fd45f..11d08678 100644
      function togglePerScreenMode() {
          if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
          
-@@ -74,9 +118,24 @@ FocusScope {
+@@ -74,9 +116,24 @@ FocusScope {
              }
          },
          {
@@ -428,14 +426,12 @@ index 195fd45f..11d08678 100644
              }
          },
          {
-@@ -91,7 +150,14 @@ FocusScope {
+@@ -91,7 +148,12 @@ FocusScope {
  
      // Función para enfocar el campo de búsqueda
      function focusSearch() {
 +        if (showSettings) {
-+            if (settingsLoader.item) {
-+                settingsLoader.item.forceActiveFocus();
-+            }
++            wallpaperSettingsView.forceActiveFocus();
 +            return;
 +        }
          currentFocusIndex = -1;
@@ -443,7 +439,7 @@ index 195fd45f..11d08678 100644
          wallpaperSearchInput.focusInput();
  
          // Restaurar índice válido si está en -1 y hay wallpapers
-@@ -128,8 +194,11 @@ FocusScope {
+@@ -128,8 +190,11 @@ FocusScope {
  
      // Función para navegar hacia atrás (Shift+Tab)
      function focusPreviousElement() {
@@ -457,7 +453,7 @@ index 195fd45f..11d08678 100644
              focusSearch();
          } else {
              currentFocusIndex--;
-@@ -155,24 +224,10 @@ FocusScope {
+@@ -155,24 +220,10 @@ FocusScope {
  
      // Función para encontrar el índice del wallpaper actual en la lista filtrada
      function findCurrentWallpaperIndex() {
@@ -484,39 +480,35 @@ index 195fd45f..11d08678 100644
      }
  
      // Llama a focusSearch una vez que el componente se ha completado.
-@@ -180,12 +235,18 @@ FocusScope {
+@@ -180,22 +231,20 @@ FocusScope {
          centerTimer.start();
      }
  
 -    // Actualizar subcarpetas cuando la pestaña se haga visible
-+    property bool subfoldersScanned: false
-+
-+    // Actualizar subcarpetas cuando la pestaña se haga visible (solo una vez en cold start)
++    // Reposicionar al wallpaper actual cuando la pestaña se haga visible
      onVisibleChanged: {
          if (visible) {
 -            if (GlobalStates.wallpaperManager) {
 -                console.log("WallpapersTab became visible, updating subfolders");
 -                GlobalStates.wallpaperManager.scanSubfolders();
+-            }
 +            showSettings = false;
 +            GlobalStates.wallpapersTabShowSettings = false;
-+            if (!subfoldersScanned && GlobalStates.wallpaperManager) {
-+                subfoldersScanned = true;
-+                if (!GlobalStates.wallpaperManager.subfolderFilters || GlobalStates.wallpaperManager.subfolderFilters.length === 0) {
-+                    GlobalStates.wallpaperManager.scanSubfolders();
-+                }
-             }
              // Reposicionar al wallpaper actual cuando se hace visible
              centerTimer.restart();
-@@ -195,7 +256,7 @@ FocusScope {
-     // Timer para asegurar que el centrado ocurre después de que el GridView esté listo
+         }
+     }
+ 
+-    // Timer para asegurar que el centrado ocurre después de que el GridView esté listo
++    // Timer para asegurar que el centrado ocurre suavemente después de la animación de apertura
      Timer {
          id: centerTimer
 -        interval: 50
-+        interval: 40
++        interval: 220
          repeat: false
          onTriggered: {
              centerCurrentWallpaper();
-@@ -769,14 +830,240 @@ FocusScope {
+@@ -769,14 +818,240 @@ FocusScope {
                  }
              }
  
@@ -761,7 +753,7 @@ index 195fd45f..11d08678 100644
                  SchemeSelector {
                      id: schemeSelector
                      anchors.top: parent.top
-@@ -864,9 +1151,9 @@ FocusScope {
+@@ -864,9 +1139,9 @@ FocusScope {
                  highlightFollowsCurrentItem: !isScrolling
  
                  // Optimizaciones de rendimiento
@@ -774,7 +766,7 @@ index 195fd45f..11d08678 100644
                  reuseItems: true
  
                  // Configuración de scroll optimizada
-@@ -940,20 +1227,7 @@ FocusScope {
+@@ -940,20 +1215,7 @@ FocusScope {
                                  clip: true
  
                                  property var currentItem: wallpaperGrid.currentItem
@@ -796,7 +788,7 @@ index 195fd45f..11d08678 100644
                                  property bool showHoveredItem: currentItem && currentItem.isHovered && !visible
  
                                  visible: selectedIndex >= 0 || showHoveredItem
-@@ -1056,32 +1330,20 @@ FocusScope {
+@@ -1056,32 +1318,20 @@ FocusScope {
                      height: wallpaperGrid.cellHeight
                      color: "transparent"
  
@@ -833,43 +825,50 @@ index 195fd45f..11d08678 100644
                          return itemBottom + buffer >= gridTop && itemTop - buffer <= gridBottom;
                      }
  
-@@ -1122,7 +1384,7 @@ FocusScope {
+@@ -1097,6 +1347,7 @@ FocusScope {
+ 
+                                 // Lazy loader que solo carga cuando el item está visible
+                                 Loader {
++                                    id: thumbLoader
+                                     anchors.fill: parent
+                                     sourceComponent: staticImageComponent
+                                     property string sourceFile: modelData
+@@ -1107,7 +1358,7 @@ FocusScope {
+                                 Rectangle {
+                                     anchors.fill: parent
+                                     color: Colors.surface
+-                                    visible: !parent.active || parent.status !== Loader.Ready
++                                    visible: !thumbLoader.active || thumbLoader.status !== Loader.Ready
+ 
+                                     Text {
+                                         anchors.centerIn: parent
+@@ -1122,7 +1373,7 @@ FocusScope {
                                              to: 360
                                              duration: 1000
                                              loops: Animation.Infinite
 -                                            running: parent.visible
-+                                            running: parent.visible && parent.parent.status === Loader.Loading
++                                            running: parent.visible && thumbLoader.status === Loader.Loading
                                          }
                                      }
                                  }
-@@ -1227,4 +1489,30 @@ FocusScope {
+@@ -1227,4 +1478,20 @@ FocusScope {
              }
          }
      }
 +
-+    Loader {
-+        id: settingsLoader
++    WallpaperSettingsView {
++        id: wallpaperSettingsView
 +        anchors.fill: parent
-+        active: wallpapersTabRoot.showSettings
-+        visible: active
++        visible: wallpapersTabRoot.showSettings
 +        z: 2000
-+        sourceComponent: Component {
-+            WallpaperSettingsView {
-+                onBackClicked: {
-+                    wallpapersTabRoot.showSettings = false;
-+                    wallpapersTabRoot.forceActiveFocus();
-+                    wallpapersTabRoot.focusSearch();
-+                    Qt.callLater(function() {
-+                        wallpapersTabRoot.forceActiveFocus();
-+                        wallpapersTabRoot.focusSearch();
-+                    });
-+                }
-+            }
-+        }
-+        onLoaded: {
-+            if (item) {
-+                item.forceActiveFocus();
-+            }
++        onBackClicked: {
++            wallpapersTabRoot.showSettings = false;
++            wallpapersTabRoot.forceActiveFocus();
++            wallpapersTabRoot.focusSearch();
++            Qt.callLater(function() {
++                wallpapersTabRoot.forceActiveFocus();
++                wallpapersTabRoot.focusSearch();
++            });
 +        }
 +    }
  }
