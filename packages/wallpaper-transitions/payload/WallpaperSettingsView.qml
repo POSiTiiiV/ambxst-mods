@@ -39,7 +39,7 @@ FocusScope {
     property int focusedStyleIndex: 0
     property int focusedEasingIndex: 0
     property int focusedSpeedIndex: 1
-    property int focusedAutomationIndex: 0 // 0: Shuffle Now, 1: Periodic Toggle, 2-7: Intervals
+    property int focusedAutomationIndex: 0 // 0: Periodic Toggle, 1-6: Intervals, 7: All Wallpapers, 8+: Sources
     property int focusedSchemeIndex: 0
     property int focusedPresetIndex: 0
 
@@ -80,6 +80,51 @@ FocusScope {
         { label: "1h", text: "1 hour", value: 60 },
         { label: "2h", text: "2 hours", value: 120 }
     ]
+
+    readonly property var availableSourceOptions: {
+        let list = [
+            { key: "image", label: "Images", icon: Icons.image, isSubfolder: false },
+            { key: "gif", label: "GIFs", icon: Icons.play, isSubfolder: false },
+            { key: "video", label: "Videos", icon: Icons.play, isSubfolder: false }
+        ];
+        if (GlobalStates && GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.subfolderFilters) {
+            let subs = GlobalStates.wallpaperManager.subfolderFilters;
+            for (let i = 0; i < subs.length; i++) {
+                list.push({
+                    key: "subfolder_" + subs[i],
+                    label: subs[i],
+                    icon: Icons.folder,
+                    isSubfolder: true
+                });
+            }
+        }
+        return list;
+    }
+
+    function getMatchingCountText() {
+        if (!GlobalStates || !GlobalStates.wallpaperManager || !GlobalStates.wallpaperManager.wallpaperPaths) {
+            return "0 wallpapers";
+        }
+        let allPaths = GlobalStates.wallpaperManager.wallpaperPaths;
+        let filters = (GlobalStates.wallpaperRandomSourceFilters && Array.isArray(GlobalStates.wallpaperRandomSourceFilters)) ? GlobalStates.wallpaperRandomSourceFilters : [];
+        if (filters.length === 0) {
+            return "Pool: " + allPaths.length + " (All)";
+        }
+        let count = 0;
+        for (let i = 0; i < allPaths.length; i++) {
+            let p = allPaths[i];
+            let fileType = (GlobalStates.wallpaperManager.getFileType ? GlobalStates.wallpaperManager.getFileType(p) : "").toLowerCase();
+            let subfolder = GlobalStates.wallpaperManager.getSubfolderFromPath ? GlobalStates.wallpaperManager.getSubfolderFromPath(p) : "";
+            for (let j = 0; j < filters.length; j++) {
+                let f = filters[j];
+                if (f === fileType || (f.startsWith("subfolder_") && subfolder === f.replace("subfolder_", "")) || subfolder === f) {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return "Pool: " + count + " wallpapers";
+    }
 
     readonly property var matugenSchemes: [
         { id: "scheme-content", label: "Content" },
@@ -194,8 +239,13 @@ FocusScope {
                 itemTop = targetItem.y;
                 itemBottom = targetItem.y + 76;
             } else if (sec === 3) {
-                itemTop = targetItem.y;
-                itemBottom = targetItem.y + targetItem.height;
+                if (focusedAutomationIndex <= 6) {
+                    itemTop = targetItem.y;
+                    itemBottom = targetItem.y + 110;
+                } else {
+                    itemTop = targetItem.y + 80;
+                    itemBottom = targetItem.y + targetItem.height;
+                }
             } else if (sec === 4) {
                 let row = Math.floor(focusedSchemeIndex / 4);
                 itemTop = row === 0 ? targetItem.y : (targetItem.y + 28 + (row * 46));
@@ -244,7 +294,8 @@ FocusScope {
             }
             break;
         case 3:
-            if (focusedAutomationIndex < 0 || focusedAutomationIndex > 7) {
+            let maxAutomation = 7 + (root.availableSourceOptions ? root.availableSourceOptions.length : 0);
+            if (focusedAutomationIndex < 0 || focusedAutomationIndex > maxAutomation) {
                 focusedAutomationIndex = 0;
             }
             break;
@@ -360,9 +411,9 @@ FocusScope {
                 if (focusedEasingIndex + 2 < easingOptions.length) {
                     focusedEasingIndex += 2;
                 } else {
-                    // Reached bottom of Easing Curve -> move down to Section 3 (Automation)
+                    // Reached bottom of Easing Curve -> move down to Section 3 (Periodic switch on left)
                     currentSection = 3;
-                    focusedAutomationIndex = 0; // "Shuffle Now" (left side)
+                    focusedAutomationIndex = 0;
                 }
             } else if (key === Qt.Key_Up) {
                 if (focusedEasingIndex >= 2) {
@@ -389,9 +440,9 @@ FocusScope {
                     focusedEasingIndex = 1; // right col, top row
                 }
             } else if (key === Qt.Key_Down) {
-                // Move down to Section 3 (Automation & Rotation, right side: periodic toggle/intervals)
+                // Move down to Section 3 (Interval pills on right)
                 currentSection = 3;
-                focusedAutomationIndex = 1; // Periodic Rotation
+                focusedAutomationIndex = 1; // 1m interval pill
             } else if (key === Qt.Key_Up) {
                 // Move up to Transition Style (bottom row, right col: index 9)
                 currentSection = 0;
@@ -399,31 +450,52 @@ FocusScope {
             }
             break;
 
-        case 3: // Automation & Rotation (0: Shuffle, 1: Periodic Toggle, 2..7: Interval pills)
+        case 3: // Automation & Rotation (0: Periodic Toggle, 1..6: Intervals, 7: All, 8+: Sources)
+            let maxSourceIdx = 7 + (root.availableSourceOptions ? root.availableSourceOptions.length : 0);
             if (key === Qt.Key_Right) {
-                if (focusedAutomationIndex < 7) {
+                if (focusedAutomationIndex < 6) {
+                    focusedAutomationIndex++;
+                } else if (focusedAutomationIndex === 6) {
+                    // At end of intervals row
+                } else if (focusedAutomationIndex >= 7 && focusedAutomationIndex < maxSourceIdx) {
                     focusedAutomationIndex++;
                 }
             } else if (key === Qt.Key_Left) {
-                if (focusedAutomationIndex > 0) {
+                if (focusedAutomationIndex > 0 && focusedAutomationIndex <= 6) {
+                    focusedAutomationIndex--;
+                } else if (focusedAutomationIndex > 7) {
                     focusedAutomationIndex--;
                 }
             } else if (key === Qt.Key_Down) {
-                // Move directly down to Section 4 (Material You Schemes)
-                currentSection = 4;
-                if (focusedAutomationIndex === 0) {
-                    focusedSchemeIndex = 0;
+                if (focusedAutomationIndex <= 6) {
+                    // Move from Periodic row down to Sources row
+                    if (focusedAutomationIndex === 0) {
+                        focusedAutomationIndex = 7; // All Wallpapers
+                    } else {
+                        focusedAutomationIndex = Math.min(7 + focusedAutomationIndex, maxSourceIdx);
+                    }
                 } else {
-                    focusedSchemeIndex = 2;
+                    // Move from Sources row down to Material You Schemes
+                    currentSection = 4;
+                    focusedSchemeIndex = Math.min(focusedAutomationIndex - 7, matugenSchemes.length - 1);
                 }
             } else if (key === Qt.Key_Up) {
-                // Move up to Easing (if left) or Duration (if right)
-                if (focusedAutomationIndex === 0) {
-                    currentSection = 1;
-                    focusedEasingIndex = 4; // bottom row of Easing
+                if (focusedAutomationIndex >= 7) {
+                    // Move from Sources row up to Periodic row
+                    if (focusedAutomationIndex === 7) {
+                        focusedAutomationIndex = 0; // Toggle switch
+                    } else {
+                        focusedAutomationIndex = Math.min(focusedAutomationIndex - 7, 6);
+                    }
                 } else {
-                    currentSection = 2;
-                    focusedSpeedIndex = Math.min(Math.max(0, focusedAutomationIndex - 2), speedOptions.length - 1);
+                    // Move up to Easing (if left) or Duration (if right)
+                    if (focusedAutomationIndex === 0) {
+                        currentSection = 1;
+                        focusedEasingIndex = 4; // bottom row of Easing
+                    } else {
+                        currentSection = 2;
+                        focusedSpeedIndex = Math.min(Math.max(0, focusedAutomationIndex - 1), speedOptions.length - 1);
+                    }
                 }
             }
             break;
@@ -451,13 +523,9 @@ FocusScope {
                 if (focusedSchemeIndex >= 4) {
                     focusedSchemeIndex -= 4;
                 } else {
-                    // Move up to Section 3 (Automation & Rotation)
+                    // Move up to Section 3 (Random Sources row)
                     currentSection = 3;
-                    if (focusedSchemeIndex <= 1) {
-                        focusedAutomationIndex = 0; // Shuffle Now
-                    } else {
-                        focusedAutomationIndex = 1; // Periodic Rotation
-                    }
+                    focusedAutomationIndex = 7 + Math.min(focusedSchemeIndex, root.availableSourceOptions ? root.availableSourceOptions.length : 0);
                 }
             }
             break;
@@ -507,15 +575,26 @@ FocusScope {
             break;
         case 3:
             if (focusedAutomationIndex === 0) {
-                if (GlobalStates) GlobalStates.triggerRandomWallpaper();
-            } else if (focusedAutomationIndex === 1) {
                 if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(!GlobalStates.wallpaperPeriodicEnabled);
-            } else if (focusedAutomationIndex >= 2) {
+            } else if (focusedAutomationIndex >= 1 && focusedAutomationIndex <= 6) {
                 if (GlobalStates) {
                     if (!GlobalStates.wallpaperPeriodicEnabled) {
                         GlobalStates.setWallpaperPeriodicEnabled(true);
                     }
-                    GlobalStates.setWallpaperPeriodicInterval(intervalOptions[focusedAutomationIndex - 2].value);
+                    GlobalStates.setWallpaperPeriodicInterval(intervalOptions[focusedAutomationIndex - 1].value);
+                }
+            } else if (focusedAutomationIndex === 7) {
+                // "All Wallpapers"
+                if (GlobalStates) {
+                    GlobalStates.setWallpaperRandomSourceFilters([]);
+                }
+            } else if (focusedAutomationIndex >= 8) {
+                let optIdx = focusedAutomationIndex - 8;
+                if (root.availableSourceOptions && optIdx < root.availableSourceOptions.length) {
+                    let key = root.availableSourceOptions[optIdx].key;
+                    if (GlobalStates) {
+                        GlobalStates.toggleWallpaperRandomSourceFilter(key);
+                    }
                 }
             }
             break;
@@ -663,7 +742,7 @@ FocusScope {
                 }
 
                 Text {
-                    text: "Arrow keys navigate all settings & sub-panels • Enter/Space to apply • Tab to jump • Esc to return"
+                    text: "Arrow keys navigate settings • Space/Enter to toggle sources • Tab to jump sections • Esc to return"
                     font.family: Config.theme.font
                     font.pixelSize: Styling.fontSize(-3)
                     color: Colors.outline
@@ -1058,232 +1137,350 @@ FocusScope {
                         }
                     }
 
-                    RowLayout {
+                    // Card 1: Periodic Wallpaper Rotation
+                    StyledRect {
+                        id: periodicCard
                         Layout.fillWidth: true
-                        spacing: 12
+                        Layout.preferredHeight: 74
+                        readonly property bool isPeriodic: GlobalStates && GlobalStates.wallpaperPeriodicEnabled
+                        readonly property int periodicInt: GlobalStates ? GlobalStates.wallpaperPeriodicInterval : 15
+                        variant: "pane"
+                        radius: Styling.radius(4)
 
-                        // Card 1: Shuffle Wallpaper Now Button
-                        StyledRect {
-                            id: shuffleCard
-                            Layout.preferredWidth: 260
-                            Layout.preferredHeight: 74
-                            readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 0
-                            variant: isFocused || shuffleMa.containsMouse ? "primary" : "pane"
-                            radius: Styling.radius(4)
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 14
 
-                            Rectangle {
-                                anchors.fill: parent
-                                color: "transparent"
-                                border.color: Colors.primary
-                                border.width: 2
-                                radius: Styling.radius(4)
-                                visible: shuffleCard.isFocused
-                            }
+                            // Toggle Area
+                            StyledRect {
+                                id: periodicToggleRect
+                                Layout.preferredWidth: 240
+                                Layout.fillHeight: true
+                                readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 0
+                                variant: isFocused || toggleMa.containsMouse ? "focus" : "pane"
+                                radius: Styling.radius(3)
 
-                            MouseArea {
-                                id: shuffleMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    root.currentSection = 3;
-                                    root.focusedAutomationIndex = 0;
-                                    if (GlobalStates) GlobalStates.triggerRandomWallpaper();
-                                }
-                                onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
-
-                                RowLayout {
+                                Rectangle {
                                     anchors.fill: parent
-                                    anchors.margins: 12
-                                    spacing: 10
+                                    color: "transparent"
+                                    border.color: Colors.primary
+                                    border.width: 2
+                                    radius: Styling.radius(3)
+                                    visible: periodicToggleRect.isFocused
+                                }
 
-                                    Text {
-                                        text: Icons.shuffle
-                                        font.family: Icons.font
-                                        font.pixelSize: 26
-                                        color: shuffleCard.isFocused || shuffleMa.containsMouse ? Colors.overPrimary : Colors.primary
+                                MouseArea {
+                                    id: toggleMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.currentSection = 3;
+                                        root.focusedAutomationIndex = 0;
+                                        if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(!periodicCard.isPeriodic);
                                     }
+                                    onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 2
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        spacing: 8
 
-                                        Text {
-                                            text: "Shuffle Wallpaper Now"
-                                            font.family: Config.theme.font
-                                            font.pixelSize: Styling.fontSize(0)
-                                            font.weight: Font.Bold
-                                            color: shuffleCard.isFocused || shuffleMa.containsMouse ? Colors.overPrimary : Colors.overBackground
+                                        Item {
+                                            Layout.preferredWidth: 32
+                                            Layout.preferredHeight: 32
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: Icons.timer
+                                                font.family: Icons.font
+                                                font.pixelSize: 22
+                                                color: periodicCard.isPeriodic ? Colors.primary : Colors.overSurface
+                                            }
                                         }
 
-                                        Text {
-                                            text: "Pick random wallpaper instantly"
-                                            font.family: Config.theme.font
-                                            font.pixelSize: Styling.fontSize(-3)
-                                            color: shuffleCard.isFocused || shuffleMa.containsMouse ? Colors.overPrimary : Colors.outline
-                                            opacity: 0.9
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 1
+
+                                            Text {
+                                                text: "Periodic Rotation"
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(0)
+                                                font.weight: Font.Bold
+                                                color: Colors.overBackground
+                                            }
+
+                                            Text {
+                                                text: periodicCard.isPeriodic ? ("Rotates every " + periodicCard.periodicInt + "m") : "Automatic switching disabled"
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-3)
+                                                color: periodicCard.isPeriodic ? Colors.primary : Colors.outline
+                                            }
+                                        }
+
+                                        Switch {
+                                            checked: periodicCard.isPeriodic
+                                            focusPolicy: Qt.NoFocus
+                                            onToggled: {
+                                                root.currentSection = 3;
+                                                root.focusedAutomationIndex = 0;
+                                                if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(checked);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillHeight: true
+                                Layout.preferredWidth: 1
+                                color: Colors.outline
+                                opacity: 0.2
+                            }
+
+                            // Interval Pills
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                opacity: periodicCard.isPeriodic ? 1.0 : 0.45
+
+                                Repeater {
+                                    model: root.intervalOptions
+
+                                    delegate: StyledRect {
+                                        id: intCard
+                                        required property var modelData
+                                        required property int index
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 38
+
+                                        readonly property bool isSelected: periodicCard.periodicInt === modelData.value
+                                        readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === (index + 1)
+
+                                        variant: isSelected ? "primary" : ((maInt.containsMouse || isFocused) ? "focus" : "pane")
+                                        radius: Styling.radius(3)
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            color: "transparent"
+                                            border.color: intCard.isSelected ? Colors.overPrimary : Colors.primary
+                                            border.width: 2
+                                            radius: Styling.radius(3)
+                                            visible: intCard.isFocused
+                                        }
+
+                                        MouseArea {
+                                            id: maInt
+                                            anchors.fill: parent
+                                            hoverEnabled: periodicCard.isPeriodic
+                                            cursorShape: periodicCard.isPeriodic ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: {
+                                                if (!periodicCard.isPeriodic && GlobalStates) {
+                                                    GlobalStates.setWallpaperPeriodicEnabled(true);
+                                                }
+                                                root.currentSection = 3;
+                                                root.focusedAutomationIndex = index + 1;
+                                                if (GlobalStates) GlobalStates.setWallpaperPeriodicInterval(modelData.value);
+                                            }
+                                            onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: modelData.text
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-2)
+                                                font.weight: intCard.isSelected ? Font.Bold : Font.Medium
+                                                color: intCard.isSelected ? Colors.overPrimary : Colors.overSurface
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
 
-                        // Card 2: Periodic Wallpaper Rotation
-                        StyledRect {
-                            id: periodicCard
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 74
-                            readonly property bool isPeriodic: GlobalStates && GlobalStates.wallpaperPeriodicEnabled
-                            readonly property int periodicInt: GlobalStates ? GlobalStates.wallpaperPeriodicInterval : 15
-                            variant: "pane"
-                            radius: Styling.radius(4)
+                    // Card 2: Random Wallpaper Sources & Directories Pool
+                    StyledRect {
+                        id: poolCard
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: poolColumn.implicitHeight + 20
+                        variant: "pane"
+                        radius: Styling.radius(4)
+
+                        ColumnLayout {
+                            id: poolColumn
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 8
 
                             RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 14
+                                Layout.fillWidth: true
+                                spacing: 8
 
-                                // Toggle Area
+                                Text {
+                                    text: Icons.folder
+                                    font.family: Icons.font
+                                    font.pixelSize: 18
+                                    color: Colors.primary
+                                }
+
+                                Text {
+                                    text: "Random Rotation Sources"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(0)
+                                    font.weight: Font.Bold
+                                    color: Colors.overBackground
+                                }
+
+                                Text {
+                                    text: "• Select directories & types for shuffle and periodic rotation (empty = all)"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-3)
+                                    color: Colors.outline
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                // Wallpaper count badge
                                 StyledRect {
-                                    id: periodicToggleRect
-                                    Layout.preferredWidth: 230
-                                    Layout.fillHeight: true
-                                    readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 1
-                                    variant: isFocused || toggleMa.containsMouse ? "focus" : "pane"
+                                    Layout.preferredHeight: 26
+                                    Layout.preferredWidth: countText.implicitWidth + 20
+                                    variant: "focus"
+                                    radius: Styling.radius(2)
+
+                                    Text {
+                                        id: countText
+                                        anchors.centerIn: parent
+                                        readonly property var currentFilters: GlobalStates ? GlobalStates.wallpaperRandomSourceFilters : []
+                                        text: root.getMatchingCountText()
+                                        font.family: Config.theme.font
+                                        font.pixelSize: Styling.fontSize(-3)
+                                        font.weight: Font.Medium
+                                        color: Colors.primary
+                                    }
+                                }
+                            }
+
+                            // Flow of source chips
+                            Flow {
+                                id: sourceChipsFlow
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                // "All Wallpapers" chip (index: 7)
+                                StyledRect {
+                                    id: allChip
+                                    readonly property bool isSelected: !GlobalStates || !GlobalStates.wallpaperRandomSourceFilters || GlobalStates.wallpaperRandomSourceFilters.length === 0
+                                    readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 7
+                                    variant: isSelected ? "primary" : ((allMa.containsMouse || isFocused) ? "focus" : "pane")
                                     radius: Styling.radius(3)
+                                    height: 32
+                                    width: allRow.implicitWidth + 18
 
                                     Rectangle {
                                         anchors.fill: parent
                                         color: "transparent"
-                                        border.color: Colors.primary
+                                        border.color: allChip.isSelected ? Colors.overPrimary : Colors.primary
                                         border.width: 2
                                         radius: Styling.radius(3)
-                                        visible: periodicToggleRect.isFocused
+                                        visible: allChip.isFocused
                                     }
 
                                     MouseArea {
-                                        id: toggleMa
+                                        id: allMa
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             root.currentSection = 3;
-                                            root.focusedAutomationIndex = 1;
-                                            if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(!periodicCard.isPeriodic);
+                                            root.focusedAutomationIndex = 7;
+                                            if (GlobalStates) GlobalStates.setWallpaperRandomSourceFilters([]);
                                         }
                                         onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                         RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 6
-                                            spacing: 8
+                                            id: allRow
+                                            anchors.centerIn: parent
+                                            spacing: 6
 
-                                            Item {
-                                                Layout.preferredWidth: 32
-                                                Layout.preferredHeight: 32
-
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: Icons.timer
-                                                    font.family: Icons.font
-                                                    font.pixelSize: 22
-                                                    color: periodicCard.isPeriodic ? Colors.primary : Colors.overSurface
-                                                }
+                                            Text {
+                                                text: allChip.isSelected ? Icons.accept : Icons.sparkle
+                                                font.family: Icons.font
+                                                font.pixelSize: 14
+                                                color: allChip.isSelected ? Colors.overPrimary : Colors.primary
                                             }
 
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 1
-
-                                                Text {
-                                                    text: "Periodic Rotation"
-                                                    font.family: Config.theme.font
-                                                    font.pixelSize: Styling.fontSize(0)
-                                                    font.weight: Font.Bold
-                                                    color: Colors.overBackground
-                                                }
-
-                                                Text {
-                                                    text: periodicCard.isPeriodic ? ("Rotates every " + periodicCard.periodicInt + "m") : "Automatic switching disabled"
-                                                    font.family: Config.theme.font
-                                                    font.pixelSize: Styling.fontSize(-3)
-                                                    color: periodicCard.isPeriodic ? Colors.primary : Colors.outline
-                                                }
-                                            }
-
-                                            Switch {
-                                                checked: periodicCard.isPeriodic
-                                                focusPolicy: Qt.NoFocus
-                                                onToggled: {
-                                                    root.currentSection = 3;
-                                                    root.focusedAutomationIndex = 1;
-                                                    if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(checked);
-                                                }
+                                            Text {
+                                                text: "All Wallpapers"
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-2)
+                                                font.weight: allChip.isSelected ? Font.Bold : Font.Medium
+                                                color: allChip.isSelected ? Colors.overPrimary : Colors.overBackground
                                             }
                                         }
                                     }
                                 }
 
-                                Rectangle {
-                                    Layout.fillHeight: true
-                                    Layout.preferredWidth: 1
-                                    color: Colors.outline
-                                    opacity: 0.2
-                                }
+                                // Base Types & Subfolders Repeater
+                                Repeater {
+                                    id: sourceRepeater
+                                    model: root.availableSourceOptions
 
-                                // Interval Pills
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-                                    opacity: periodicCard.isPeriodic ? 1.0 : 0.45
+                                    delegate: StyledRect {
+                                        id: chipCard
+                                        required property var modelData
+                                        required property int index
+                                        readonly property int itemIndex: 8 + index
 
-                                    Repeater {
-                                        model: root.intervalOptions
+                                        readonly property bool isSelected: (GlobalStates && GlobalStates.wallpaperRandomSourceFilters && GlobalStates.wallpaperRandomSourceFilters.includes(modelData.key))
+                                        readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === itemIndex
 
-                                        delegate: StyledRect {
-                                            id: intCard
-                                            required property var modelData
-                                            required property int index
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 38
+                                        variant: isSelected ? "primary" : ((maChip.containsMouse || isFocused) ? "focus" : "pane")
+                                        radius: Styling.radius(3)
+                                        height: 32
+                                        width: chipRow.implicitWidth + 18
 
-                                            readonly property bool isSelected: periodicCard.periodicInt === modelData.value
-                                            readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === (index + 2)
-
-                                            variant: isSelected ? "primary" : ((maInt.containsMouse || isFocused) ? "focus" : "pane")
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            color: "transparent"
+                                            border.color: chipCard.isSelected ? Colors.overPrimary : Colors.primary
+                                            border.width: 2
                                             radius: Styling.radius(3)
+                                            visible: chipCard.isFocused
+                                        }
 
-                                            Rectangle {
-                                                anchors.fill: parent
-                                                color: "transparent"
-                                                border.color: intCard.isSelected ? Colors.overPrimary : Colors.primary
-                                                border.width: 2
-                                                radius: Styling.radius(3)
-                                                visible: intCard.isFocused
+                                        MouseArea {
+                                            id: maChip
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                root.currentSection = 3;
+                                                root.focusedAutomationIndex = itemIndex;
+                                                if (GlobalStates) GlobalStates.toggleWallpaperRandomSourceFilter(modelData.key);
                                             }
+                                            onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
-                                            MouseArea {
-                                                id: maInt
-                                                anchors.fill: parent
-                                                hoverEnabled: periodicCard.isPeriodic
-                                                cursorShape: periodicCard.isPeriodic ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                                onClicked: {
-                                                    if (!periodicCard.isPeriodic && GlobalStates) {
-                                                        GlobalStates.setWallpaperPeriodicEnabled(true);
-                                                    }
-                                                    root.currentSection = 3;
-                                                    root.focusedAutomationIndex = index + 2;
-                                                    if (GlobalStates) GlobalStates.setWallpaperPeriodicInterval(modelData.value);
-                                                }
-                                                onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
+                                            RowLayout {
+                                                id: chipRow
+                                                anchors.centerIn: parent
+                                                spacing: 6
 
                                                 Text {
-                                                    anchors.centerIn: parent
-                                                    text: modelData.text
+                                                    text: chipCard.isSelected ? Icons.accept : modelData.icon
+                                                    font.family: Icons.font
+                                                    font.pixelSize: 14
+                                                    color: chipCard.isSelected ? Colors.overPrimary : (modelData.isSubfolder ? Colors.primary : Colors.overSurface)
+                                                }
+
+                                                Text {
+                                                    text: modelData.label
                                                     font.family: Config.theme.font
                                                     font.pixelSize: Styling.fontSize(-2)
-                                                    font.weight: intCard.isSelected ? Font.Bold : Font.Medium
-                                                    color: intCard.isSelected ? Colors.overPrimary : Colors.overSurface
+                                                    font.weight: chipCard.isSelected ? Font.Bold : Font.Medium
+                                                    color: chipCard.isSelected ? Colors.overPrimary : Colors.overBackground
                                                 }
                                             }
                                         }

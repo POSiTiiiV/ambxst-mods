@@ -33,9 +33,11 @@ A premier, high-performance modification package for the [Ambxst Desktop Environ
   - **Zero Black Flash / Zero Stutter**: Dual-slot renderer detects video frame readiness (`positionMs > 0` with timer fallback) before starting the transition, preventing black frames or decoding stalls.
 
 ### 🎲 Randomization & Background Automation
-- **Instant Shuffle Button (``)**: Integrated directly into both the wallpaper picker top bar and the Advanced Settings panel.
+- **Top-Bar Shuffle Button (``)**: Instant single-click random wallpaper trigger directly in the wallpaper picker top bar.
+- **Customizable Directory & Category Pool Filtering**: Choose one or multiple directories and categories (`Images`, `GIFs`, `Videos`, or custom subfolders like `cool`, `extra`, etc.) for both random shuffle and periodic rotation. If no categories are chosen, it defaults to your full library.
+- **Live Pool Matching Badge**: Real-time counter displays how many wallpapers match your active rotation pool.
 - **Background Periodic Rotation**: Automated periodic wallpaper rotation with persistent intervals (`1m`, `5m`, `15m`, `30m`, `1h`, `2h`), saved to Ambxst configuration and preserved across desktop reboots.
-- **Compositor Keybinding**: Bind any preferred shortcut to `ambxst run wallpaper-random` for instant wallpaper transitions.
+- **Compositor Keybinding**: Bind any preferred shortcut to `ambxst run wallpaper-random` for instant wallpaper transitions respecting your chosen directory pool.
 
 ### ⚙️ Dedicated In-Tab Advanced Settings Panel
 - **Seamless Modal Experience**: Replaces the wallpaper grid in-place within the dashboard tab without opening a separate popup or disruptive window.
@@ -115,11 +117,11 @@ ambxst run wallpaper-random
 
 | Control / Key | Action |
 | :--- | :--- |
-| <kbd>↑</kbd> <kbd>↓</kbd> | **2D Vertical Navigation**: Traverses seamlessly between items and across sections (`Transition Style` ↔ `Easing & Duration` ↔ `Automation` ↔ `Color Schemes` ↔ `Presets` ↔ `Back Button`) |
-| <kbd>←</kbd> <kbd>→</kbd> | **2D Horizontal Navigation**: Moves between cards and crosses over horizontally between `Easing Curve` and `Animation Duration` columns |
-| <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> | Quickly jump between major section headers |
-| <kbd>Enter</kbd> / <kbd>Space</kbd> | Apply selected transition style, easing curve, speed, color scheme, or preset (arrow navigation is non-destructive and does not apply settings until confirmed) |
-| <kbd>Esc</kbd> | Return directly to the wallpaper picker and focus search |
+| <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> | Jump between major section headers (`Transition Style` ↔ `Easing Curve` ↔ `Duration` ↔ `Automation & Rotation` ↔ `Color Schemes` ↔ `Presets` ↔ `Back Button`) |
+| <kbd>↑</kbd> <kbd>↓</kbd> | **2D Vertical Navigation**: Traverses seamlessly between items and across sections |
+| <kbd>←</kbd> <kbd>→</kbd> | **2D Horizontal Navigation**: Moves between cards, interval pills, and pool chips |
+| <kbd>Space</kbd> / <kbd>Enter</kbd> | Toggle periodic rotation switch, interval pills, or random pool source chips |
+| <kbd>Esc</kbd> | Return directly to the wallpaper picker and focus the search bar |
 
 ---
 

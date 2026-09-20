@@ -1,8 +1,8 @@
 diff --git a/modules/globals/GlobalStates.qml b/modules/globals/GlobalStates.qml
-index eb6e9ccd..f2fd65a0 100644
+index eb6e9ccd..0d7f3394 100644
 --- a/modules/globals/GlobalStates.qml
 +++ b/modules/globals/GlobalStates.qml
-@@ -190,6 +190,101 @@ Singleton {
+@@ -190,6 +190,139 @@ Singleton {
          wallpaperSelectedIndex = -1;
      }
  
@@ -13,6 +13,7 @@ index eb6e9ccd..f2fd65a0 100644
 +    property bool wallpapersTabShowSettings: false
 +    property bool wallpaperPeriodicEnabled: StateService.get("wallpaperPeriodicEnabled", false)
 +    property int wallpaperPeriodicInterval: StateService.get("wallpaperPeriodicInterval", 15)
++    property var wallpaperRandomSourceFilters: StateService.get("wallpaperRandomSourceFilters", [])
 +
 +    function setWallpaperTransitionStyle(style) {
 +        wallpaperTransitionStyle = style;
@@ -39,10 +40,45 @@ index eb6e9ccd..f2fd65a0 100644
 +        if (StateService && StateService.initialized) StateService.set("wallpaperPeriodicInterval", interval);
 +    }
 +
++    function setWallpaperRandomSourceFilters(filters) {
++        wallpaperRandomSourceFilters = filters;
++        if (StateService && StateService.initialized) StateService.set("wallpaperRandomSourceFilters", filters);
++    }
++
++    function toggleWallpaperRandomSourceFilter(filterKey) {
++        let cur = (root.wallpaperRandomSourceFilters && Array.isArray(root.wallpaperRandomSourceFilters)) ? root.wallpaperRandomSourceFilters.slice() : [];
++        let idx = cur.indexOf(filterKey);
++        if (idx >= 0) {
++            cur.splice(idx, 1);
++        } else {
++            cur.push(filterKey);
++        }
++        root.setWallpaperRandomSourceFilters(cur);
++    }
++
 +    function triggerRandomWallpaper() {
 +        if (!wallpaperManager || !wallpaperManager.wallpaperPaths || wallpaperManager.wallpaperPaths.length === 0) return;
-+        let paths = wallpaperManager.wallpaperPaths;
-+        if (paths.length === 0) return;
++        let allPaths = wallpaperManager.wallpaperPaths;
++        if (allPaths.length === 0) return;
++
++        let paths = allPaths;
++        let activeFilters = (root.wallpaperRandomSourceFilters && Array.isArray(root.wallpaperRandomSourceFilters)) ? root.wallpaperRandomSourceFilters : [];
++        if (activeFilters.length > 0) {
++            let filtered = allPaths.filter(function(path) {
++                let fileType = (wallpaperManager.getFileType ? wallpaperManager.getFileType(path) : "").toLowerCase();
++                let subfolder = wallpaperManager.getSubfolderFromPath ? wallpaperManager.getSubfolderFromPath(path) : "";
++                for (let i = 0; i < activeFilters.length; i++) {
++                    let f = activeFilters[i];
++                    if (f === fileType) return true;
++                    if (f.startsWith("subfolder_") && subfolder === f.replace("subfolder_", "")) return true;
++                    if (subfolder === f) return true;
++                }
++                return false;
++            });
++            if (filtered.length > 0) {
++                paths = filtered;
++            }
++        }
 +
 +        let screenName = (typeof AxctlService !== "undefined" && AxctlService.focusedMonitor && AxctlService.focusedMonitor.name)
 +            ? AxctlService.focusedMonitor.name
@@ -68,7 +104,7 @@ index eb6e9ccd..f2fd65a0 100644
 +        } else {
 +            wallpaperManager.setWallpaper(nextWallpaper);
 +        }
-+        wallpaperSelectedIndex = nextIndex;
++        wallpaperSelectedIndex = allPaths.indexOf(nextWallpaper);
 +    }
 +
 +    Timer {
@@ -90,6 +126,7 @@ index eb6e9ccd..f2fd65a0 100644
 +                root.wallpaperTransitionDuration = StateService.get("wallpaperTransitionDuration", 400);
 +                root.wallpaperPeriodicEnabled = StateService.get("wallpaperPeriodicEnabled", false);
 +                root.wallpaperPeriodicInterval = StateService.get("wallpaperPeriodicInterval", 15);
++                root.wallpaperRandomSourceFilters = StateService.get("wallpaperRandomSourceFilters", []);
 +            }
 +        }
 +        function onStateLoaded() {
@@ -98,6 +135,7 @@ index eb6e9ccd..f2fd65a0 100644
 +            root.wallpaperTransitionDuration = StateService.get("wallpaperTransitionDuration", 400);
 +            root.wallpaperPeriodicEnabled = StateService.get("wallpaperPeriodicEnabled", false);
 +            root.wallpaperPeriodicInterval = StateService.get("wallpaperPeriodicInterval", 15);
++            root.wallpaperRandomSourceFilters = StateService.get("wallpaperRandomSourceFilters", []);
 +        }
 +    }
 +
@@ -251,7 +289,7 @@ index 099acb04..7e28b63e 100644
      }
  
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index 195fd45f..6133c5e1 100644
+index 195fd45f..d2897dce 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -11,6 +11,7 @@ import qs.config
@@ -262,7 +300,7 @@ index 195fd45f..6133c5e1 100644
  
      // Propiedades personalizadas para la funcionalidad del componente.
      property string searchText: ""
-@@ -30,6 +31,43 @@ FocusScope {
+@@ -30,6 +31,47 @@ FocusScope {
          return perScreen[currentScreenName] !== undefined;
      }
  
@@ -298,15 +336,19 @@ index 195fd45f..6133c5e1 100644
 +        if (showSettings) {
 +            wallpaperSettingsView.forceActiveFocus();
 +        } else {
-+            focusSearch();
-+            Qt.callLater(focusSearch);
++            wallpapersTabRoot.forceActiveFocus();
++            wallpapersTabRoot.focusSearch();
++            Qt.callLater(function() {
++                wallpapersTabRoot.forceActiveFocus();
++                wallpapersTabRoot.focusSearch();
++            });
 +        }
 +    }
 +
      function togglePerScreenMode() {
          if (!GlobalStates.wallpaperManager || currentScreenName === "") return;
          
-@@ -74,9 +112,24 @@ FocusScope {
+@@ -74,9 +116,24 @@ FocusScope {
              }
          },
          {
@@ -333,7 +375,7 @@ index 195fd45f..6133c5e1 100644
              }
          },
          {
-@@ -91,7 +144,12 @@ FocusScope {
+@@ -91,7 +148,12 @@ FocusScope {
  
      // Función para enfocar el campo de búsqueda
      function focusSearch() {
@@ -346,7 +388,7 @@ index 195fd45f..6133c5e1 100644
          wallpaperSearchInput.focusInput();
  
          // Restaurar índice válido si está en -1 y hay wallpapers
-@@ -128,8 +186,11 @@ FocusScope {
+@@ -128,8 +190,11 @@ FocusScope {
  
      // Función para navegar hacia atrás (Shift+Tab)
      function focusPreviousElement() {
@@ -360,7 +402,7 @@ index 195fd45f..6133c5e1 100644
              focusSearch();
          } else {
              currentFocusIndex--;
-@@ -155,24 +216,10 @@ FocusScope {
+@@ -155,24 +220,10 @@ FocusScope {
  
      // Función para encontrar el índice del wallpaper actual en la lista filtrada
      function findCurrentWallpaperIndex() {
@@ -387,7 +429,7 @@ index 195fd45f..6133c5e1 100644
      }
  
      // Llama a focusSearch una vez que el componente se ha completado.
-@@ -180,10 +227,12 @@ FocusScope {
+@@ -180,10 +231,12 @@ FocusScope {
          centerTimer.start();
      }
  
@@ -402,7 +444,7 @@ index 195fd45f..6133c5e1 100644
                  console.log("WallpapersTab became visible, updating subfolders");
                  GlobalStates.wallpaperManager.scanSubfolders();
              }
-@@ -192,10 +241,10 @@ FocusScope {
+@@ -192,10 +245,10 @@ FocusScope {
          }
      }
  
@@ -415,7 +457,7 @@ index 195fd45f..6133c5e1 100644
          repeat: false
          onTriggered: {
              centerCurrentWallpaper();
-@@ -769,14 +818,240 @@ FocusScope {
+@@ -769,14 +822,240 @@ FocusScope {
                  }
              }
  
@@ -660,7 +702,7 @@ index 195fd45f..6133c5e1 100644
                  SchemeSelector {
                      id: schemeSelector
                      anchors.top: parent.top
-@@ -864,9 +1139,9 @@ FocusScope {
+@@ -864,9 +1143,9 @@ FocusScope {
                  highlightFollowsCurrentItem: !isScrolling
  
                  // Optimizaciones de rendimiento
@@ -673,7 +715,7 @@ index 195fd45f..6133c5e1 100644
                  reuseItems: true
  
                  // Configuración de scroll optimizada
-@@ -940,20 +1215,7 @@ FocusScope {
+@@ -940,20 +1219,7 @@ FocusScope {
                                  clip: true
  
                                  property var currentItem: wallpaperGrid.currentItem
@@ -695,7 +737,7 @@ index 195fd45f..6133c5e1 100644
                                  property bool showHoveredItem: currentItem && currentItem.isHovered && !visible
  
                                  visible: selectedIndex >= 0 || showHoveredItem
-@@ -1056,32 +1318,20 @@ FocusScope {
+@@ -1056,32 +1322,20 @@ FocusScope {
                      height: wallpaperGrid.cellHeight
                      color: "transparent"
  
@@ -732,7 +774,7 @@ index 195fd45f..6133c5e1 100644
                          return itemBottom + buffer >= gridTop && itemTop - buffer <= gridBottom;
                      }
  
-@@ -1122,7 +1372,7 @@ FocusScope {
+@@ -1122,7 +1376,7 @@ FocusScope {
                                              to: 360
                                              duration: 1000
                                              loops: Animation.Infinite
@@ -741,7 +783,7 @@ index 195fd45f..6133c5e1 100644
                                          }
                                      }
                                  }
-@@ -1227,4 +1477,16 @@ FocusScope {
+@@ -1227,4 +1481,20 @@ FocusScope {
              }
          }
      }
@@ -753,8 +795,12 @@ index 195fd45f..6133c5e1 100644
 +        z: 2000
 +        onBackClicked: {
 +            wallpapersTabRoot.showSettings = false;
++            wallpapersTabRoot.forceActiveFocus();
 +            wallpapersTabRoot.focusSearch();
-+            Qt.callLater(wallpapersTabRoot.focusSearch);
++            Qt.callLater(function() {
++                wallpapersTabRoot.forceActiveFocus();
++                wallpapersTabRoot.focusSearch();
++            });
 +        }
 +    }
  }
