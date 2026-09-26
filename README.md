@@ -8,24 +8,26 @@ A curated collection of declarative modifications, performance optimizations, an
 
 | Package | Name | Version | Ambxst | Description | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| [`wallpaper-transitions`](packages/wallpaper-transitions) | **Wallpaper Transitions** | `v1.3.2` | `>=1.3.0` | Animated transitions (10 styles, 6 easing curves), GIF/video support, random shuffle, custom directory pools, automated rotation, keyboard navigation, and fast browsing. | Active (`v1.3.2`) |
+| [`wallpaper-transitions`](packages/wallpaper-transitions) | **Wallpaper Transitions** | `v1.4.0` | `>=1.3.0` | Animated transitions (10 styles, 6 easing curves), GIF/video support with smart fullscreen pausing, random shuffle, custom rotation timer, solar time-of-day sync, and keyboard navigation. | Active (`v1.4.0`) |
 
 ---
 
-## Featured Mod: Wallpaper Transitions (`v1.3.2`)
+## Featured Mod: Wallpaper Transitions (`v1.4.0`)
 
 > Full documentation and IPC reference available in [`packages/wallpaper-transitions/README.md`](packages/wallpaper-transitions/README.md).
 
 ### Features
 * **10 Transition Styles**: Crossfade, Circle Expand (Iris Out), Circle Shrink (Iris In), Slide (Left, Right, Up, Down), Zoom & Fade, Ambxst Pulse, and Instant Swap.
-* **6 Easing Curves & Speeds**: Cubic, Ease In-Out, Exponential, Elastic Back, Quadratic, and Linear with duration presets from Fast (200ms) to Cinematic (1200ms).
+* **6 Easing Curves & Speeds**: Cubic, Ease In-Out, Exponential, Elastic Back, Quadratic, and Linear with duration presets from Fast (200ms) to Cinematic (1200ms) and marquee text descriptions.
 * **Smooth & Stutter-Free**: Fluid animations with zero black frames, decoder stalls, or compositor pauses.
-* **Full Media Support**: Seamless transitions across static images, animated GIFs, and live videos.
+* **Full Media Support**: Seamless transitions across static images, animated GIFs, and live videos (`.mp4`, `.webm`, `.mov`, `.mkv`).
+* **Intelligent Playback Pausing (VRAM & GPU Diet)**: Automatically pauses live video and GIF wallpapers when apps enter fullscreen or cover the screen, with configurable scope (current monitor vs all monitors).
 * **Randomization & Automation**:
   * **Top-Bar Shuffle**: Change to a random wallpaper with a single click in the wallpaper picker.
   * **Custom Directory & Category Pools**: Choose which categories (Images, GIFs, Videos) or specific subfolders your random and periodic wallpapers are picked from.
   * **Fair Shuffle Deck**: Ensures every wallpaper in your active pool plays before repeating.
-  * **Periodic Rotation**: Automatically cycle wallpapers at configurable intervals (1m to 2h).
+  * **Precision Custom Timer**: Set rotation intervals with standard presets (`30s` to `2h`) or use tactile **Hours**, **Minutes**, and **Seconds** steppers with direct keyboard typing and 1s precision.
+  * **Match Time of Day (Solar Sync)**: Independent toggle switch matching random wallpapers to the current solar phase (Morning, Afternoon, Sunset, Night) via fast thumbnail color indexing.
   * **Compositor Shortcut Support**: Can be bound to any shortcut in your compositor configuration via `ambxst run wallpaper-random`.
 * **Full Keyboard Navigation**:
   * Arrow keys navigate settings and wallpaper grid cleanly.
@@ -113,8 +115,17 @@ ambxst ipc call GlobalStates.setWallpaperTransitionDuration '[400]'
 # Toggle automated periodic background rotation
 ambxst ipc call GlobalStates.setWallpaperPeriodicEnabled '[true]'
 
-# Set rotation interval in minutes (e.g. 15 minutes)
-ambxst ipc call GlobalStates.setWallpaperPeriodicInterval '[15]'
+# Set rotation interval in seconds (e.g. 900 for 15 minutes, 30 for 30s)
+ambxst ipc call GlobalStates.setWallpaperPeriodicSeconds '[900]'
+
+# Toggle Match Time of Day (Solar Sync)
+ambxst ipc call GlobalStates.setWallpaperSolarSyncEnabled '[true]'
+
+# Set live video/GIF pause mode ("fullscreen", "maximized", or "never")
+ambxst ipc call GlobalStates.setWallpaperPauseMode '["fullscreen"]'
+
+# Set live video/GIF pause scope ("perScreen" or "allScreens")
+ambxst ipc call GlobalStates.setWallpaperPauseScope '["perScreen"]'
 
 # Filter random and periodic pool by categories or subfolders (empty array = all wallpapers)
 ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '["video", "subfolder_nature"]'
