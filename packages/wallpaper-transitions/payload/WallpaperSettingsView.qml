@@ -2495,11 +2495,12 @@ FocusScope {
                     StyledRect {
                         id: playbackPauseCard
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 104
+                        Layout.preferredHeight: playbackPauseCol.implicitHeight + 20
                         variant: "pane"
                         radius: Styling.radius(4)
 
                         ColumnLayout {
+                            id: playbackPauseCol
                             anchors.fill: parent
                             anchors.margins: 10
                             spacing: 8
@@ -2603,11 +2604,18 @@ FocusScope {
                                 }
                             }
 
+                            // Divider
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 1
+                                color: Colors.outline
+                                opacity: 0.15
+                            }
+
                             // Monitor Scope Selector
                             RowLayout {
                                 Layout.fillWidth: true
-                                Layout.topMargin: 2
-                                spacing: 8
+                                spacing: 10
 
                                 Text {
                                     text: "Pause Scope:"
@@ -2634,6 +2642,15 @@ FocusScope {
                                             readonly property bool isSelected: root.currentPauseScope === modelData.id
                                             variant: isSelected ? "primary" : (maScope.containsMouse ? "focus" : "pane")
                                             radius: Styling.radius(3)
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                color: "transparent"
+                                                border.color: scopeCard.isSelected ? Colors.overPrimary : Colors.primary
+                                                border.width: 1
+                                                opacity: scopeCard.isSelected ? 0.35 : (maScope.containsMouse ? 0.8 : 0.2)
+                                                radius: Styling.radius(3)
+                                            }
 
                                             MouseArea {
                                                 id: maScope
