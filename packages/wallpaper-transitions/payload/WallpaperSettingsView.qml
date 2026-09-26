@@ -43,12 +43,13 @@ FocusScope {
         readonly property bool isOverflowing: marqueeRoot.width > 0 && textItem.implicitWidth > marqueeRoot.width
         readonly property real overflowDistance: (marqueeRoot.width > 0 && isOverflowing) ? Math.max(0, textItem.implicitWidth - marqueeRoot.width) : 0
         readonly property int animDuration: Math.max(1200, Math.round((overflowDistance / Math.max(1, speed)) * 1000))
-        readonly property bool shouldAnimate: isOverflowing && (hovered || isSelected) && marqueeRoot.visible
+        readonly property bool shouldAnimate: isOverflowing && hovered && marqueeRoot.visible
 
         Text {
             id: textItem
             x: 0
-            width: implicitWidth
+            width: marqueeRoot.shouldAnimate ? implicitWidth : Math.min(implicitWidth, marqueeRoot.width)
+            elide: marqueeRoot.shouldAnimate ? Text.ElideNone : Text.ElideRight
             anchors.verticalCenter: parent.verticalCenter
         }
 
@@ -2634,12 +2635,15 @@ FocusScope {
                                             { id: "allScreens", title: "All monitors", icon: Icons.layoutGrid }
                                         ]
 
-                                        StyledRect {
+                                        delegate: StyledRect {
                                             id: scopeCard
-                                            Layout.preferredHeight: 30
-                                            Layout.preferredWidth: scopeLayout.implicitWidth + 20
+                                            required property var modelData
+                                            required property int index
 
-                                            readonly property bool isSelected: root.currentPauseScope === modelData.id
+                                            Layout.preferredHeight: 32
+                                            Layout.preferredWidth: scopeLayout.implicitWidth + 24
+
+                                            readonly property bool isSelected: root.currentPauseScope === scopeCard.modelData.id
                                             variant: isSelected ? "primary" : (maScope.containsMouse ? "focus" : "pane")
                                             radius: Styling.radius(3)
 
@@ -2648,7 +2652,7 @@ FocusScope {
                                                 color: "transparent"
                                                 border.color: scopeCard.isSelected ? Colors.overPrimary : Colors.primary
                                                 border.width: 1
-                                                opacity: scopeCard.isSelected ? 0.35 : (maScope.containsMouse ? 0.8 : 0.2)
+                                                opacity: scopeCard.isSelected ? 0.4 : (maScope.containsMouse ? 0.8 : 0.25)
                                                 radius: Styling.radius(3)
                                             }
 
@@ -2658,24 +2662,24 @@ FocusScope {
                                                 hoverEnabled: true
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
-                                                    if (GlobalStates) GlobalStates.setWallpaperPauseScope(modelData.id);
+                                                    if (GlobalStates) GlobalStates.setWallpaperPauseScope(scopeCard.modelData.id);
                                                 }
                                                 onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
                                                 RowLayout {
                                                     id: scopeLayout
                                                     anchors.centerIn: parent
-                                                    spacing: 6
+                                                    spacing: 8
 
                                                     Text {
-                                                        text: modelData.icon
+                                                        text: scopeCard.modelData.icon
                                                         font.family: Icons.font
-                                                        font.pixelSize: 13
+                                                        font.pixelSize: 14
                                                         color: scopeCard.isSelected ? Colors.overPrimary : Colors.primary
                                                     }
 
                                                     Text {
-                                                        text: modelData.title
+                                                        text: scopeCard.modelData.title
                                                         font.family: Config.theme.font
                                                         font.pixelSize: Styling.fontSize(-2)
                                                         font.weight: scopeCard.isSelected ? Font.Bold : Font.Medium
