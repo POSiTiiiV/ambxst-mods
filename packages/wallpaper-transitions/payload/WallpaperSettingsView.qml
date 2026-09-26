@@ -85,6 +85,46 @@ FocusScope {
         }
     }
 
+    component AmbxstSwitch: Switch {
+        id: swRoot
+        focusPolicy: Qt.NoFocus
+
+        indicator: Rectangle {
+            implicitWidth: 40
+            implicitHeight: 20
+            x: swRoot.leftPadding
+            y: parent.height / 2 - height / 2
+            radius: height / 2
+            color: swRoot.checked ? Styling.srItem("overprimary") : Colors.surfaceBright
+            border.color: swRoot.checked ? Styling.srItem("overprimary") : Colors.outline
+
+            Behavior on color {
+                enabled: Config.animDuration > 0
+                ColorAnimation {
+                    duration: Config.animDuration / 2
+                }
+            }
+
+            Rectangle {
+                x: swRoot.checked ? parent.width - width - 2 : 2
+                y: 2
+                width: parent.height - 4
+                height: width
+                radius: width / 2
+                color: swRoot.checked ? Colors.background : Colors.overSurfaceVariant
+
+                Behavior on x {
+                    enabled: Config.animDuration > 0
+                    NumberAnimation {
+                        duration: Config.animDuration / 2
+                        easing.type: Easing.OutCubic
+                    }
+                }
+            }
+        }
+        background: null
+    }
+
     property string currentStyle: (GlobalStates && GlobalStates.wallpaperTransitionStyle) ? GlobalStates.wallpaperTransitionStyle : "crossfade"
     property string currentEasing: (GlobalStates && GlobalStates.wallpaperTransitionEasing) ? GlobalStates.wallpaperTransitionEasing : "cubic"
     property int currentDuration: (GlobalStates && GlobalStates.wallpaperTransitionDuration) ? GlobalStates.wallpaperTransitionDuration : 400
@@ -1394,10 +1434,9 @@ FocusScope {
                                     }
                                 }
 
-                                Switch {
+                                AmbxstSwitch {
                                     id: periodicSwitch
                                     checked: periodicCard.isPeriodic
-                                    focusPolicy: Qt.NoFocus
                                     onToggled: {
                                         root.currentSection = 3;
                                         root.focusedAutomationIndex = 0;
@@ -2122,10 +2161,9 @@ FocusScope {
                                     }
                                 }
 
-                                Switch {
+                                AmbxstSwitch {
                                     id: solarSwitch
                                     checked: root.isSolarSync
-                                    focusPolicy: Qt.NoFocus
                                     onToggled: {
                                         if (GlobalStates) GlobalStates.setWallpaperSolarSyncEnabled(checked);
                                     }
