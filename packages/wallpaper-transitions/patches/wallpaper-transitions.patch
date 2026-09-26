@@ -1,8 +1,8 @@
 diff --git a/modules/globals/GlobalStates.qml b/modules/globals/GlobalStates.qml
-index eb6e9ccd..99f1b7bf 100644
+index eb6e9ccd..601aa6a5 100644
 --- a/modules/globals/GlobalStates.qml
 +++ b/modules/globals/GlobalStates.qml
-@@ -190,6 +190,190 @@ Singleton {
+@@ -190,6 +190,323 @@ Singleton {
          wallpaperSelectedIndex = -1;
      }
  
@@ -10,10 +10,66 @@ index eb6e9ccd..99f1b7bf 100644
 +    property string wallpaperTransitionStyle: StateService.get("wallpaperTransitionStyle", "crossfade")
 +    property string wallpaperTransitionEasing: StateService.get("wallpaperTransitionEasing", "cubic")
 +    property int wallpaperTransitionDuration: StateService.get("wallpaperTransitionDuration", 400)
++    property string wallpaperPauseMode: StateService.get("wallpaperPauseMode", "fullscreen")
++    property string wallpaperPauseScope: StateService.get("wallpaperPauseScope", "perScreen")
 +    property bool wallpapersTabShowSettings: false
 +    property bool wallpaperPeriodicEnabled: StateService.get("wallpaperPeriodicEnabled", false)
-+    property int wallpaperPeriodicInterval: StateService.get("wallpaperPeriodicInterval", 15)
++    property int wallpaperPeriodicSeconds: StateService.get("wallpaperPeriodicSeconds", StateService.get("wallpaperPeriodicInterval", 15) * 60)
++    property int wallpaperPeriodicInterval: Math.max(1, Math.round(wallpaperPeriodicSeconds / 60))
++    property bool wallpaperSolarSyncEnabled: StateService.get("wallpaperSolarSyncEnabled", false)
++    property string lastTriggeredSolarPeriod: ""
 +    property var wallpaperRandomSourceFilters: StateService.get("wallpaperRandomSourceFilters", [])
++    property var solarCacheMap: ({})
++
++    FileView {
++        id: solarCacheFileView
++        path: Quickshell.env("HOME") + "/.cache/ambxst/wallpaper_solar_cache.json"
++        onLoaded: {
++            try {
++                let txt = solarCacheFileView.text();
++                if (txt && txt.length > 2) {
++                    root.solarCacheMap = JSON.parse(txt);
++                }
++            } catch (e) {
++                console.warn("GlobalStates: Failed to parse wallpaper_solar_cache.json:", e);
++            }
++        }
++    }
++
++    Process {
++        id: solarIndexProcess
++        command: ["ambxst-solar-index"]
++        running: false
++        onExited: (code) => {
++            if (code === 0) {
++                solarCacheFileView.reload();
++            }
++        }
++    }
++
++    function refreshSolarCache() {
++        if (!solarIndexProcess.running) {
++            solarIndexProcess.running = true;
++        }
++    }
++
++    function getCurrentSolarPeriod() {
++        let hour = new Date().getHours();
++        if (hour >= 6 && hour < 11) return "morning";
++        if (hour >= 11 && hour < 17) return "afternoon";
++        if (hour >= 17 && hour < 21) return "sunset";
++        return "night";
++    }
++
++    function setWallpaperPauseMode(mode) {
++        wallpaperPauseMode = mode;
++        if (StateService && StateService.initialized) StateService.set("wallpaperPauseMode", mode);
++    }
++
++    function setWallpaperPauseScope(scope) {
++        wallpaperPauseScope = scope;
++        if (StateService && StateService.initialized) StateService.set("wallpaperPauseScope", scope);
++    }
 +
 +    function setWallpaperTransitionStyle(style) {
 +        wallpaperTransitionStyle = style;
@@ -35,9 +91,28 @@ index eb6e9ccd..99f1b7bf 100644
 +        if (StateService && StateService.initialized) StateService.set("wallpaperPeriodicEnabled", enabled);
 +    }
 +
++    function setWallpaperSolarSyncEnabled(enabled) {
++        wallpaperSolarSyncEnabled = enabled;
++        if (StateService && StateService.initialized) StateService.set("wallpaperSolarSyncEnabled", enabled);
++        if (enabled) {
++            if (!solarCacheMap || Object.keys(solarCacheMap).length === 0) {
++                refreshSolarCache();
++            }
++        }
++    }
++
++    function setWallpaperPeriodicSeconds(sec) {
++        let val = Math.max(5, Math.round(sec));
++        wallpaperPeriodicSeconds = val;
++        wallpaperPeriodicInterval = Math.max(1, Math.round(val / 60));
++        if (StateService && StateService.initialized) {
++            StateService.set("wallpaperPeriodicSeconds", val);
++            StateService.set("wallpaperPeriodicInterval", wallpaperPeriodicInterval);
++        }
++    }
++
 +    function setWallpaperPeriodicInterval(interval) {
-+        wallpaperPeriodicInterval = interval;
-+        if (StateService && StateService.initialized) StateService.set("wallpaperPeriodicInterval", interval);
++        setWallpaperPeriodicSeconds(Math.max(1, interval) * 60);
 +    }
 +
 +    function setWallpaperRandomSourceFilters(filters) {
@@ -110,6 +185,39 @@ index eb6e9ccd..99f1b7bf 100644
 +            }
 +        }
 +
++        if (root.wallpaperSolarSyncEnabled) {
++            let period = root.getCurrentSolarPeriod();
++            let basePath = wallpaperManager.wallpaperDir || "";
++            if (basePath && !basePath.endsWith("/")) basePath += "/";
++
++            let solarFiltered = paths.filter(function(path) {
++                let rel = path.startsWith(basePath) ? path.substring(basePath.length) : path;
++                if (root.solarCacheMap && root.solarCacheMap[rel]) {
++                    return root.solarCacheMap[rel] === period;
++                }
++                // Fallback to keyword matching if not cached
++                let lower = path.toLowerCase();
++                let keywords = [];
++                if (period === "morning") {
++                    keywords = ["morning", "dawn", "sunrise", "early", "daybreak", "light"];
++                } else if (period === "afternoon") {
++                    keywords = ["afternoon", "midday", "noon", "day", "bright", "sun", "warm"];
++                } else if (period === "sunset") {
++                    keywords = ["sunset", "dusk", "evening", "golden", "twilight", "sundown", "orange"];
++                } else {
++                    keywords = ["night", "dark", "midnight", "stars", "moon", "starry", "neon", "space"];
++                }
++                for (let k = 0; k < keywords.length; k++) {
++                    if (lower.indexOf(keywords[k]) !== -1) return true;
++                }
++                return false;
++            });
++
++            if (solarFiltered.length > 0) {
++                paths = solarFiltered;
++            }
++        }
++
 +        let screenName = (typeof AxctlService !== "undefined" && AxctlService.focusedMonitor && AxctlService.focusedMonitor.name)
 +            ? AxctlService.focusedMonitor.name
 +            : ((wallpaperManager.screen && wallpaperManager.screen.name) ? wallpaperManager.screen.name : (wallpaperManager.currentScreenName || ""));
@@ -118,7 +226,8 @@ index eb6e9ccd..99f1b7bf 100644
 +        let curPath = isPerScreen ? perScreen[screenName] : ((wallpaperManager.effectiveWallpaper !== undefined && wallpaperManager.effectiveWallpaper !== "") ? wallpaperManager.effectiveWallpaper : (wallpaperManager.currentWallpaper || ""));
 +
 +        // Shuffle Deck management: 100% fair random permutation without repetition
-+        let poolKey = activeFilters.slice().sort().join("|") + ":" + paths.length;
++        let periodKey = root.wallpaperSolarSyncEnabled ? (":" + root.getCurrentSolarPeriod()) : "";
++        let poolKey = activeFilters.slice().sort().join("|") + ":" + paths.length + periodKey;
 +        if (root.wallpaperShufflePoolKey !== poolKey || !Array.isArray(root.wallpaperShuffleDeck)) {
 +            root.wallpaperShuffleDeck = [];
 +            root.wallpaperShufflePoolKey = poolKey;
@@ -160,11 +269,27 @@ index eb6e9ccd..99f1b7bf 100644
 +
 +    Timer {
 +        id: wallpaperPeriodicTimer
-+        interval: Math.max(1, root.wallpaperPeriodicInterval) * 60000
++        interval: Math.max(5, root.wallpaperPeriodicSeconds) * 1000
 +        repeat: true
 +        running: root.wallpaperPeriodicEnabled
 +        onTriggered: {
 +            root.triggerRandomWallpaper();
++        }
++    }
++
++    Timer {
++        id: solarPhaseCheckTimer
++        interval: 30000
++        repeat: true
++        running: root.wallpaperPeriodicEnabled && root.wallpaperSolarSyncEnabled
++        onTriggered: {
++            let curPeriod = root.getCurrentSolarPeriod();
++            if (root.lastTriggeredSolarPeriod === "") {
++                root.lastTriggeredSolarPeriod = curPeriod;
++            } else if (curPeriod !== root.lastTriggeredSolarPeriod) {
++                root.lastTriggeredSolarPeriod = curPeriod;
++                root.triggerRandomWallpaper();
++            }
 +        }
 +    }
 +
@@ -176,8 +301,12 @@ index eb6e9ccd..99f1b7bf 100644
 +                root.wallpaperTransitionEasing = StateService.get("wallpaperTransitionEasing", "cubic");
 +                root.wallpaperTransitionDuration = StateService.get("wallpaperTransitionDuration", 400);
 +                root.wallpaperPeriodicEnabled = StateService.get("wallpaperPeriodicEnabled", false);
-+                root.wallpaperPeriodicInterval = StateService.get("wallpaperPeriodicInterval", 15);
++                root.wallpaperPeriodicSeconds = StateService.get("wallpaperPeriodicSeconds", StateService.get("wallpaperPeriodicInterval", 15) * 60);
++                root.wallpaperPeriodicInterval = Math.max(1, Math.round(root.wallpaperPeriodicSeconds / 60));
++                root.wallpaperSolarSyncEnabled = StateService.get("wallpaperSolarSyncEnabled", false);
 +                root.wallpaperRandomSourceFilters = StateService.get("wallpaperRandomSourceFilters", []);
++                root.wallpaperPauseMode = StateService.get("wallpaperPauseMode", "fullscreen");
++                root.wallpaperPauseScope = StateService.get("wallpaperPauseScope", "perScreen");
 +            }
 +        }
 +        function onStateLoaded() {
@@ -185,8 +314,12 @@ index eb6e9ccd..99f1b7bf 100644
 +            root.wallpaperTransitionEasing = StateService.get("wallpaperTransitionEasing", "cubic");
 +            root.wallpaperTransitionDuration = StateService.get("wallpaperTransitionDuration", 400);
 +            root.wallpaperPeriodicEnabled = StateService.get("wallpaperPeriodicEnabled", false);
-+            root.wallpaperPeriodicInterval = StateService.get("wallpaperPeriodicInterval", 15);
++            root.wallpaperPeriodicSeconds = StateService.get("wallpaperPeriodicSeconds", StateService.get("wallpaperPeriodicInterval", 15) * 60);
++            root.wallpaperPeriodicInterval = Math.max(1, Math.round(root.wallpaperPeriodicSeconds / 60));
++            root.wallpaperSolarSyncEnabled = StateService.get("wallpaperSolarSyncEnabled", false);
 +            root.wallpaperRandomSourceFilters = StateService.get("wallpaperRandomSourceFilters", []);
++            root.wallpaperPauseMode = StateService.get("wallpaperPauseMode", "fullscreen");
++            root.wallpaperPauseScope = StateService.get("wallpaperPauseScope", "perScreen");
 +        }
 +    }
 +
@@ -322,8 +455,86 @@ index 66cbd27d..4886cc80 100644
                      Text {
                          visible: (root.selectedMod?.error ?? "") !== ""
                              || (root.selectedMod?.compatibilityError ?? "") !== ""
+diff --git a/modules/widgets/dashboard/wallpapers/VideoWallpaper.qml b/modules/widgets/dashboard/wallpapers/VideoWallpaper.qml
+index 5b466f05..cce36392 100644
+--- a/modules/widgets/dashboard/wallpapers/VideoWallpaper.qml
++++ b/modules/widgets/dashboard/wallpapers/VideoWallpaper.qml
+@@ -11,18 +11,46 @@ Item {
+     signal requestVideoSync
+ 
+     readonly property real positionMs: player.position
++    property bool hasFirstFrame: false
++    signal firstFrameReady
++    property bool paused: false
++
++    onPausedChanged: {
++        if (paused) {
++            if (player.playbackState === MediaPlayer.PlayingState) {
++                player.pause();
++            }
++        } else {
++            if (player.playbackState === MediaPlayer.PausedState) {
++                player.play();
++            }
++        }
++    }
++
++    onPositionMsChanged: {
++        if (positionMs > 0 && !hasFirstFrame) {
++            hasFirstFrame = true;
++            firstFrameReady();
++        }
++    }
+ 
+     readonly property var optimizedPalette: ["background", "overBackground", "shadow", "surface", "surfaceBright", "surfaceDim", "surfaceContainer", "surfaceContainerHigh", "surfaceContainerHighest", "surfaceContainerLow", "surfaceContainerLowest", "primary", "secondary", "tertiary", "red", "lightRed", "green", "lightGreen", "blue", "lightBlue", "yellow", "lightYellow", "cyan", "lightCyan", "magenta", "lightMagenta"]
+ 
+     onSourceFileChanged: restartPlayback()
+     Component.onCompleted: restartPlayback()
++    Component.onDestruction: player.stop()
+ 
+     function restartPlayback() {
+         if (!sourceFile)
+             return;
++        hasFirstFrame = false;
+         player.stop();
+         player.source = "file://" + sourceFile;
+-        player.play();
++        if (paused) {
++            player.pause();
++        } else {
++            player.play();
++        }
+         syncDebounce.restart();
+     }
+ 
+@@ -92,13 +120,24 @@ Item {
+             vertexShader: "palette.vert.qsb"
+             fragmentShader: "palette.frag.qsb"
+         }
++
++        Connections {
++            target: videoWallpaper.hasFirstFrame ? null : videoOut.videoSink
++            enabled: !videoWallpaper.hasFirstFrame
++            function onVideoFrameChanged() {
++                if (!videoWallpaper.hasFirstFrame) {
++                    videoWallpaper.hasFirstFrame = true;
++                    videoWallpaper.firstFrameReady();
++                }
++            }
++        }
+     }
+ 
+     Connections {
+         target: GlobalStates
+         function onVideoSyncTickChanged() {
+             player.seek(0);
+-            if (player.playbackState !== MediaPlayer.PlayingState)
++            if (!videoWallpaper.paused && player.playbackState !== MediaPlayer.PlayingState)
+                 player.play();
+         }
+     }
 diff --git a/modules/widgets/dashboard/wallpapers/Wallpaper.qml b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
-index 099acb04..cbc54237 100644
+index 099acb04..abdc2897 100644
 --- a/modules/widgets/dashboard/wallpapers/Wallpaper.qml
 +++ b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
 @@ -42,6 +42,16 @@ PanelWindow {
@@ -337,13 +548,63 @@ index 099acb04..cbc54237 100644
 +            GlobalStates.wallpaperManager.onWallpaperTransitionFinished(path);
 +            return;
 +        }
-+        runMatugenForCurrentWallpaper();
++        runMatugenForCurrentWallpaper(path || currentWallpaper);
 +        generateLockscreenFrame(path || currentWallpaper);
 +    }
  
      // Blurs the wallpaper while niri's native overview is open. The overview
      // backdrop shows this surface (place-within-backdrop), so blurring it here
-@@ -323,16 +333,22 @@ PanelWindow {
+@@ -91,6 +101,8 @@ PanelWindow {
+     // React to light/dark mode changes
+     property bool isLightMode: Config.theme.lightMode
+     onIsLightModeChanged: {
++        if (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager !== wallpaper)
++            return;
+         if (activeColorPreset) {
+             applyColorPreset();
+         } else {
+@@ -99,6 +111,8 @@ PanelWindow {
+     }
+ 
+     onActiveColorPresetChanged: {
++        if (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager !== wallpaper)
++            return;
+         if (activeColorPreset) {
+             applyColorPreset();
+         } else {
+@@ -111,6 +125,10 @@ PanelWindow {
+     }
+ 
+     function applyColorPreset() {
++        if (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager !== wallpaper) {
++            GlobalStates.wallpaperManager.applyColorPreset();
++            return;
++        }
+         if (!activeColorPreset)
+             return;
+ 
+@@ -130,8 +148,19 @@ PanelWindow {
+     }
+ 
+     function setColorPreset(name) {
++        if (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager !== wallpaper) {
++            GlobalStates.wallpaperManager.setColorPreset(name);
++            return;
++        }
++        if (wallpaper.activeColorPreset === name) {
++            wallpaperConfig.adapter.activeColorPreset = "";
++            wallpaper.activeColorPreset = "";
++            runMatugenForCurrentWallpaper();
++            return;
++        }
+         wallpaperConfig.adapter.activeColorPreset = name;
+-    // activeColorPreset property will update automatically via binding to adapter
++        wallpaper.activeColorPreset = name;
++        applyColorPreset();
+     }
+ 
+     // Funciones utilitarias para tipos de archivo
+@@ -323,16 +352,22 @@ PanelWindow {
                      currentIndex = pathIndex;
                      wallpaperConfig.adapter.currentWall = path;
                      currentWallpaper = path;
@@ -369,7 +630,7 @@ index 099acb04..cbc54237 100644
          } else {
              console.warn("Wallpaper path not found in current list:", path);
          }
-@@ -364,8 +380,10 @@ PanelWindow {
+@@ -364,8 +399,10 @@ PanelWindow {
          currentIndex = (currentIndex + 1) % wallpaperPaths.length;
          currentWallpaper = wallpaperPaths[currentIndex];
          wallpaperConfig.adapter.currentWall = wallpaperPaths[currentIndex];
@@ -382,7 +643,7 @@ index 099acb04..cbc54237 100644
      }
  
      function previousWallpaper() {
-@@ -380,8 +398,10 @@ PanelWindow {
+@@ -380,8 +417,10 @@ PanelWindow {
          currentIndex = currentIndex === 0 ? wallpaperPaths.length - 1 : currentIndex - 1;
          currentWallpaper = wallpaperPaths[currentIndex];
          wallpaperConfig.adapter.currentWall = wallpaperPaths[currentIndex];
@@ -395,7 +656,7 @@ index 099acb04..cbc54237 100644
      }
  
      function setWallpaperByIndex(index) {
-@@ -395,8 +415,10 @@ PanelWindow {
+@@ -395,34 +434,45 @@ PanelWindow {
              currentIndex = index;
              currentWallpaper = wallpaperPaths[currentIndex];
              wallpaperConfig.adapter.currentWall = wallpaperPaths[currentIndex];
@@ -408,7 +669,50 @@ index 099acb04..cbc54237 100644
          }
      }
  
-@@ -1050,10 +1072,11 @@ PanelWindow {
+     // Función para re-ejecutar Matugen con el wallpaper actual
+     function setMatugenScheme(scheme) {
++        if (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager !== wallpaper) {
++            GlobalStates.wallpaperManager.setMatugenScheme(scheme);
++            return;
++        }
+         wallpaperConfig.adapter.matugenScheme = scheme;
+ 
+-        if (wallpaperConfig.adapter.activeColorPreset) {
++        if (wallpaperConfig.adapter.activeColorPreset || wallpaper.activeColorPreset) {
+             console.log("Switching to Matugen scheme, clearing preset");
+             wallpaperConfig.adapter.activeColorPreset = "";
+-        } else {
+-            runMatugenForCurrentWallpaper();
++            wallpaper.activeColorPreset = "";
+         }
++        runMatugenForCurrentWallpaper();
+     }
+ 
+-    function runMatugenForCurrentWallpaper() {
++    function runMatugenForCurrentWallpaper(targetPath) {
++        if (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager !== wallpaper) {
++            GlobalStates.wallpaperManager.runMatugenForCurrentWallpaper(targetPath);
++            return;
++        }
+         if (activeColorPreset) {
+             console.log("Skipping Matugen because color preset is active:", activeColorPreset);
+             return;
+         }
+ 
+-        if (currentWallpaper && initialLoadCompleted) {
+-            console.log("Running Matugen for current wallpaper:", currentWallpaper);
++        var wall = targetPath || currentWallpaper;
++        if (wall && initialLoadCompleted) {
++            console.log("Running Matugen for current wallpaper:", wall);
+ 
+-            var fileType = getFileType(currentWallpaper);
+-            var matugenSource = getColorSource(currentWallpaper);
++            var fileType = getFileType(wall);
++            var matugenSource = getColorSource(wall);
+ 
+             console.log("Using source for matugen:", matugenSource, "(type:", fileType + ")");
+ 
+@@ -1050,10 +1100,11 @@ PanelWindow {
              }
          }
  

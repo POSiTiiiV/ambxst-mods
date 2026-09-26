@@ -2,10 +2,12 @@ import QtQuick
 import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 import qs.modules.globals
 import qs.modules.services
 import qs.modules.theme
 import qs.config
+import qs.modules.bar.workspaces // For CompositorData
 
 Item {
     id: root
@@ -22,10 +24,147 @@ Item {
     readonly property string transitionStyle: (GlobalStates && GlobalStates.wallpaperTransitionStyle) ? GlobalStates.wallpaperTransitionStyle : "crossfade"
     readonly property int duration: (GlobalStates && GlobalStates.wallpaperTransitionDuration !== undefined) ? GlobalStates.wallpaperTransitionDuration : 400
     readonly property string easingCurve: (GlobalStates && GlobalStates.wallpaperTransitionEasing) ? GlobalStates.wallpaperTransitionEasing : "cubic"
+    readonly property string pauseMode: (GlobalStates && GlobalStates.wallpaperPauseMode) ? GlobalStates.wallpaperPauseMode : "fullscreen"
+    readonly property string pauseScope: (GlobalStates && GlobalStates.wallpaperPauseScope) ? GlobalStates.wallpaperPauseScope : "perScreen"
 
     readonly property string modId: "positive.wallpaper-transitions"
     readonly property bool tintEnabled: wallpaperManager ? wallpaperManager.tintEnabled : false
-    readonly property string currentScreenName: wallpaperManager ? wallpaperManager.currentScreenName : ""
+    readonly property string currentScreenName: {
+        if (wallpaperManager && wallpaperManager.screen && wallpaperManager.screen.name) {
+            return wallpaperManager.screen.name;
+        }
+        if (wallpaperManager && wallpaperManager.currentScreenName) {
+            return wallpaperManager.currentScreenName;
+        }
+        return "";
+    }
+    readonly property var compositorMonitor: {
+        let mon = AxctlService.monitorFor(currentScreenName);
+        if (mon) return mon;
+        let vals = AxctlService.monitors ? AxctlService.monitors.values : null;
+        if (vals && vals.length === 1) return vals[0];
+        return AxctlService.focusedMonitor;
+    }
+
+    property bool isMonitorFullscreen: false
+    property bool isMonitorCovered: false
+
+    function updateWindowState() {
+        if (pauseMode === "never") {
+            isMonitorFullscreen = false;
+            isMonitorCovered = false;
+            return;
+        }
+
+        const isPerScreen = (pauseScope === "perScreen");
+
+        if (isPerScreen && !compositorMonitor) {
+            isMonitorFullscreen = false;
+            isMonitorCovered = false;
+            return;
+        }
+
+        const monId = compositorMonitor ? compositorMonitor.id : -1;
+        const activeWorkspaceId = compositorMonitor && compositorMonitor.activeWorkspace ? compositorMonitor.activeWorkspace.id : 0;
+
+        let fs = false;
+        let covered = false;
+
+        if (isPerScreen) {
+            // 1. Fast path: native Wayland active toplevel is fullscreen on this monitor
+            const toplevel = ToplevelManager.activeToplevel;
+            if (toplevel && toplevel.fullscreen && AxctlService.focusedMonitor && AxctlService.focusedMonitor.id === monId) {
+                fs = true;
+            }
+
+            // 2. Window list scan for this monitor's active workspace
+            const wins = CompositorData.windowList || [];
+            for (let i = 0; i < wins.length; i++) {
+                const w = wins[i];
+                if (w.monitor === monId && w.workspace && w.workspace.id === activeWorkspaceId && !w.hidden) {
+                    if (w.fullscreen) {
+                        fs = true;
+                        covered = true;
+                        break;
+                    }
+                    if (!w.floating) {
+                        covered = true;
+                    } else if (w.size && compositorMonitor && compositorMonitor.width > 0 && compositorMonitor.height > 0) {
+                        const winArea = w.size[0] * w.size[1];
+                        const screenArea = compositorMonitor.width * compositorMonitor.height;
+                        if (winArea >= (screenArea * 0.9)) {
+                            covered = true;
+                        }
+                    }
+                }
+            }
+        } else {
+            // Global scope ("allScreens"): pause if ANY monitor has fullscreen/covered window
+            const toplevel = ToplevelManager.activeToplevel;
+            if (toplevel && toplevel.fullscreen) {
+                fs = true;
+            }
+
+            const wins = CompositorData.windowList || [];
+            for (let i = 0; i < wins.length; i++) {
+                const w = wins[i];
+                if (!w.hidden) {
+                    if (w.fullscreen) {
+                        fs = true;
+                        covered = true;
+                        break;
+                    }
+                    if (!w.floating) {
+                        covered = true;
+                    }
+                }
+            }
+        }
+
+        isMonitorFullscreen = fs;
+        isMonitorCovered = covered;
+    }
+
+    readonly property bool shouldPauseLiveWallpaper: {
+        if (isTransitioning || pendingSource !== "") return false;
+        if (pauseMode === "never") return false;
+        if (pauseMode === "covered") return isMonitorFullscreen || isMonitorCovered;
+        // Default: "fullscreen"
+        return isMonitorFullscreen;
+    }
+
+    Timer {
+        id: windowStateDebounce
+        interval: 50
+        repeat: false
+        onTriggered: root.updateWindowState()
+    }
+
+    Connections {
+        target: CompositorData
+        function onWindowListChanged() { windowStateDebounce.restart(); }
+    }
+
+    Connections {
+        target: AxctlService.monitors
+        function onValuesChanged() { windowStateDebounce.restart(); }
+    }
+
+    Connections {
+        target: AxctlService
+        function onFocusedMonitorChanged() { windowStateDebounce.restart(); }
+        function onFocusedClientChanged() { windowStateDebounce.restart(); }
+        function onFocusedWorkspaceChanged() { windowStateDebounce.restart(); }
+    }
+
+    Connections {
+        target: ToplevelManager
+        function onActiveToplevelChanged() { windowStateDebounce.restart(); }
+    }
+
+    onPauseModeChanged: updateWindowState()
+    onPauseScopeChanged: updateWindowState()
+    Component.onCompleted: updateWindowState()
 
     clip: true
 
@@ -159,7 +298,7 @@ Item {
                 } else if (mediaType === "gif") {
                     return animImgLoader.item ? animImgLoader.item.status === Image.Ready : false;
                 } else if (mediaType === "video") {
-                    return videoFrameReady || (videoCompLoader.item ? videoCompLoader.item.positionMs > 0 : false);
+                    return videoFrameReady || (videoCompLoader.item ? (videoCompLoader.item.hasFirstFrame || videoCompLoader.item.positionMs > 0) : false);
                 }
                 return false;
             }
@@ -193,11 +332,12 @@ Item {
 
             Timer {
                 id: videoFallbackTimer
-                interval: 120
+                interval: 2500
                 repeat: false
                 running: layerRoot.mediaType === "video" && layerRoot.imageSource !== "" && !layerRoot.videoFrameReady
                 onTriggered: {
                     if (!layerRoot.videoFrameReady) {
+                        console.warn("TransitionWallpaper: Video first-frame timeout (2500ms), starting transition:", layerRoot.imageSource);
                         layerRoot.videoFrameReady = true;
                         layerRoot.notifyIfReady();
                     }
@@ -246,6 +386,7 @@ Item {
                     AnimatedImage {
                         id: animImg
                         anchors.fill: parent
+                        paused: root.shouldPauseLiveWallpaper
                         source: {
                             if (!layerRoot.imageSource) return "";
                             return layerRoot.imageSource.startsWith("file://") ? layerRoot.imageSource : ("file://" + layerRoot.imageSource);
@@ -286,9 +427,16 @@ Item {
                         id: videoWallpaperChild
                         sourceFile: layerRoot.imageSource.replace(/^file:\/\//, "")
                         tint: root.tintEnabled
+                        paused: root.shouldPauseLiveWallpaper
                         onRequestVideoSync: {
                             if (root.wallpaperManager && root.wallpaperManager.requestVideoSync)
                                 root.wallpaperManager.requestVideoSync();
+                        }
+                        onFirstFrameReady: {
+                            if (!layerRoot.videoFrameReady) {
+                                layerRoot.videoFrameReady = true;
+                                layerRoot.notifyIfReady();
+                            }
                         }
                         onPositionMsChanged: {
                             if (positionMs > 0 && !layerRoot.videoFrameReady) {
@@ -298,6 +446,10 @@ Item {
                         }
                         Component.onCompleted: {
                             layerRoot.activeVideoRef = videoWallpaperChild;
+                            if (videoWallpaperChild.hasFirstFrame && !layerRoot.videoFrameReady) {
+                                layerRoot.videoFrameReady = true;
+                                layerRoot.notifyIfReady();
+                            }
                         }
                         Component.onDestruction: {
                             if (layerRoot.activeVideoRef === videoWallpaperChild)

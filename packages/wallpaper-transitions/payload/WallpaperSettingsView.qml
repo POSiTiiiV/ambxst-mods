@@ -26,6 +26,64 @@ FocusScope {
 
     signal backClicked
 
+    component MarqueeText: Item {
+        id: marqueeRoot
+        clip: true
+        implicitHeight: textItem.implicitHeight
+        implicitWidth: textItem.implicitWidth
+
+        property alias text: textItem.text
+        property alias font: textItem.font
+        property alias color: textItem.color
+        property alias textOpacity: textItem.opacity
+        property bool hovered: false
+        property bool isSelected: false
+        property real speed: 38
+
+        readonly property bool isOverflowing: marqueeRoot.width > 0 && textItem.implicitWidth > marqueeRoot.width
+        readonly property real overflowDistance: (marqueeRoot.width > 0 && isOverflowing) ? Math.max(0, textItem.implicitWidth - marqueeRoot.width) : 0
+        readonly property int animDuration: Math.max(1200, Math.round((overflowDistance / Math.max(1, speed)) * 1000))
+        readonly property bool shouldAnimate: isOverflowing && (hovered || isSelected) && marqueeRoot.visible
+
+        Text {
+            id: textItem
+            x: 0
+            width: implicitWidth
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
+        SequentialAnimation {
+            id: marqueeAnim
+            running: marqueeRoot.shouldAnimate
+            loops: Animation.Infinite
+
+            PauseAnimation { duration: 1100 }
+            NumberAnimation {
+                target: textItem
+                property: "x"
+                to: -marqueeRoot.overflowDistance
+                duration: marqueeRoot.animDuration
+                easing.type: Easing.InOutQuad
+            }
+            PauseAnimation { duration: 1300 }
+            NumberAnimation {
+                target: textItem
+                property: "x"
+                to: 0
+                duration: Math.max(700, Math.round(marqueeRoot.animDuration * 0.75))
+                easing.type: Easing.InOutQuad
+            }
+            PauseAnimation { duration: 800 }
+        }
+
+        onShouldAnimateChanged: {
+            if (!shouldAnimate) {
+                marqueeAnim.stop();
+                textItem.x = 0;
+            }
+        }
+    }
+
     property string currentStyle: (GlobalStates && GlobalStates.wallpaperTransitionStyle) ? GlobalStates.wallpaperTransitionStyle : "crossfade"
     property string currentEasing: (GlobalStates && GlobalStates.wallpaperTransitionEasing) ? GlobalStates.wallpaperTransitionEasing : "cubic"
     property int currentDuration: (GlobalStates && GlobalStates.wallpaperTransitionDuration) ? GlobalStates.wallpaperTransitionDuration : 400
@@ -73,13 +131,109 @@ FocusScope {
     ]
 
     readonly property var intervalOptions: [
-        { label: "1m", text: "1 min", value: 1 },
-        { label: "5m", text: "5 mins", value: 5 },
-        { label: "15m", text: "15 mins", value: 15 },
-        { label: "30m", text: "30 mins", value: 30 },
-        { label: "1h", text: "1 hour", value: 60 },
-        { label: "2h", text: "2 hours", value: 120 }
+        { label: "30s", text: "30s", sec: 30 },
+        { label: "1m", text: "1m", sec: 60 },
+        { label: "5m", text: "5m", sec: 300 },
+        { label: "15m", text: "15m", sec: 900 },
+        { label: "30m", text: "30m", sec: 1800 },
+        { label: "1h", text: "1h", sec: 3600 },
+        { label: "2h", text: "2h", sec: 7200 }
     ]
+
+    readonly property int currentPeriodicSeconds: GlobalStates ? GlobalStates.wallpaperPeriodicSeconds : 900
+    readonly property string currentRotationMode: GlobalStates ? GlobalStates.wallpaperRotationMode : "interval"
+    property bool showCustomInput: !isStandardPreset(currentPeriodicSeconds)
+    property int customHours: 0
+    property int customMinutes: 15
+    property int customSeconds: 0
+
+    function initCustomInput() {
+        let sec = root.currentPeriodicSeconds;
+        customHours = Math.floor(sec / 3600);
+        customMinutes = Math.floor((sec % 3600) / 60);
+        customSeconds = sec % 60;
+    }
+
+    onCurrentPeriodicSecondsChanged: initCustomInput()
+
+    function applyCustomTimer() {
+        let sec = (customHours * 3600) + (customMinutes * 60) + customSeconds;
+        sec = Math.max(5, sec);
+        if (GlobalStates) {
+            if (!GlobalStates.wallpaperPeriodicEnabled) {
+                GlobalStates.setWallpaperPeriodicEnabled(true);
+            }
+            GlobalStates.setWallpaperPeriodicSeconds(sec);
+        }
+    }
+
+    readonly property bool isSolarSync: GlobalStates && GlobalStates.wallpaperSolarSyncEnabled
+    readonly property string currentSolarPeriod: GlobalStates ? GlobalStates.getCurrentSolarPeriod() : "afternoon"
+
+    function isStandardPreset(sec) {
+        for (let i = 0; i < intervalOptions.length; i++) {
+            if (intervalOptions[i].sec === sec) return true;
+        }
+        return false;
+    }
+
+    function formatDuration(sec) {
+        if (!sec || sec < 60) {
+            return (sec || 15) + "s";
+        }
+        let h = Math.floor(sec / 3600);
+        let m = Math.floor((sec % 3600) / 60);
+        let s = sec % 60;
+        let parts = [];
+        if (h > 0) parts.push(h + "h");
+        if (m > 0) parts.push(m + "m");
+        if (s > 0) parts.push(s + "s");
+        return parts.join(" ");
+    }
+
+    function getSolarPhaseInfo(id) {
+        switch (id) {
+            case "morning": return { title: "Morning (06:00 – 11:00)", icon: Icons.sunDim, desc: "Fresh daylight & bright pastels" };
+            case "afternoon": return { title: "Afternoon (11:00 – 17:00)", icon: Icons.sun, desc: "Warm, bright & vibrant daylight" };
+            case "sunset": return { title: "Sunset (17:00 – 21:00)", icon: Icons.sunDim, desc: "Golden hour, warm orange & dusk" };
+            case "night": return { title: "Night (21:00 – 06:00)", icon: Icons.moon, desc: "Dark, starry night & deep tones" };
+            default: return { title: "Daytime", icon: Icons.sun, desc: "Balanced daylight" };
+        }
+    }
+
+    function getSolarCount(period) {
+        if (!GlobalStates || !GlobalStates.solarCacheMap) return 0;
+        let map = GlobalStates.solarCacheMap;
+        let count = 0;
+        for (let k in map) {
+            if (map[k] === period) count++;
+        }
+        return count;
+    }
+
+    readonly property var pauseOptions: [
+        {
+            id: "fullscreen",
+            title: "Fullscreen only (Default)",
+            sub: "Pause when an app is in exclusive fullscreen mode",
+            desc: "Pauses video & GIF playback when a game, media player, or window is fullscreen."
+        },
+        {
+            id: "covered",
+            title: "Maximized & Fullscreen",
+            sub: "Pause whenever windows cover the screen",
+            desc: "Pauses live wallpaper whenever a tiled, maximized, or fullscreen window covers the screen."
+        },
+        {
+            id: "never",
+            title: "Never pause",
+            sub: "Keep playing continuously",
+            desc: "Always keeps video and GIF wallpapers playing, regardless of open windows."
+        }
+    ]
+
+    readonly property string currentPauseMode: (GlobalStates && GlobalStates.wallpaperPauseMode) ? GlobalStates.wallpaperPauseMode : "fullscreen"
+    readonly property string currentPauseScope: (GlobalStates && GlobalStates.wallpaperPauseScope) ? GlobalStates.wallpaperPauseScope : "perScreen"
 
     readonly property var availableSourceOptions: {
         let list = [
@@ -494,43 +648,35 @@ FocusScope {
             }
             break;
 
-        case 3: // Automation & Rotation (0: Periodic Toggle, 1..6: Intervals, 7: All, 8+: Sources)
-            let maxSourceIdx = 7 + (root.availableSourceOptions ? root.availableSourceOptions.length : 0);
+        case 3: // Automation & Rotation (0: Periodic Toggle, 1..6: Presets, 7: Custom Btn, 8: Solar Toggle, 9: All Walls, 10+: Sources)
+            let maxSourceIdx = 9 + (root.availableSourceOptions ? root.availableSourceOptions.length : 0);
             if (key === Qt.Key_Right) {
-                if (focusedAutomationIndex < 6) {
+                if (focusedAutomationIndex < 7) {
                     focusedAutomationIndex++;
-                } else if (focusedAutomationIndex === 6) {
-                    // At end of intervals row
-                } else if (focusedAutomationIndex >= 7 && focusedAutomationIndex < maxSourceIdx) {
+                } else if (focusedAutomationIndex >= 9 && focusedAutomationIndex < maxSourceIdx) {
                     focusedAutomationIndex++;
                 }
             } else if (key === Qt.Key_Left) {
-                if (focusedAutomationIndex > 0 && focusedAutomationIndex <= 6) {
+                if (focusedAutomationIndex > 0 && focusedAutomationIndex <= 7) {
                     focusedAutomationIndex--;
-                } else if (focusedAutomationIndex > 7) {
+                } else if (focusedAutomationIndex > 9) {
                     focusedAutomationIndex--;
                 }
             } else if (key === Qt.Key_Down) {
-                if (focusedAutomationIndex <= 6) {
-                    // Move from Periodic row down to Sources row
-                    if (focusedAutomationIndex === 0) {
-                        focusedAutomationIndex = 7; // All Wallpapers
-                    } else {
-                        focusedAutomationIndex = Math.min(7 + focusedAutomationIndex, maxSourceIdx);
-                    }
+                if (focusedAutomationIndex <= 7) {
+                    focusedAutomationIndex = 8; // Move down to Time of Day
+                } else if (focusedAutomationIndex === 8) {
+                    focusedAutomationIndex = 9; // Move down to Sources (All Wallpapers)
                 } else {
-                    // Move from Sources row down to Material You Schemes
+                    // Move from Sources down to Material You Schemes
                     currentSection = 4;
-                    focusedSchemeIndex = Math.min(focusedAutomationIndex - 7, matugenSchemes.length - 1);
+                    focusedSchemeIndex = Math.min(focusedAutomationIndex - 9, matugenSchemes.length - 1);
                 }
             } else if (key === Qt.Key_Up) {
-                if (focusedAutomationIndex >= 7) {
-                    // Move from Sources row up to Periodic row
-                    if (focusedAutomationIndex === 7) {
-                        focusedAutomationIndex = 0; // Toggle switch
-                    } else {
-                        focusedAutomationIndex = Math.min(focusedAutomationIndex - 7, 6);
-                    }
+                if (focusedAutomationIndex >= 9) {
+                    focusedAutomationIndex = 8; // Move up to Time of Day
+                } else if (focusedAutomationIndex === 8) {
+                    focusedAutomationIndex = 0; // Move up to Periodic row
                 } else {
                     // Move up to Easing (if left) or Duration (if right)
                     if (focusedAutomationIndex === 0) {
@@ -569,7 +715,7 @@ FocusScope {
                 } else {
                     // Move up to Section 3 (Random Sources row)
                     currentSection = 3;
-                    focusedAutomationIndex = 7 + Math.min(focusedSchemeIndex, root.availableSourceOptions ? root.availableSourceOptions.length : 0);
+                    focusedAutomationIndex = 9 + Math.min(focusedSchemeIndex, root.availableSourceOptions ? root.availableSourceOptions.length : 0);
                 }
             }
             break;
@@ -625,15 +771,20 @@ FocusScope {
                     if (!GlobalStates.wallpaperPeriodicEnabled) {
                         GlobalStates.setWallpaperPeriodicEnabled(true);
                     }
-                    GlobalStates.setWallpaperPeriodicInterval(intervalOptions[focusedAutomationIndex - 1].value);
+                    GlobalStates.setWallpaperPeriodicSeconds(intervalOptions[focusedAutomationIndex - 1].sec);
                 }
             } else if (focusedAutomationIndex === 7) {
+                root.showCustomInput = !root.showCustomInput;
+                if (root.showCustomInput) root.initCustomInput();
+            } else if (focusedAutomationIndex === 8) {
+                if (GlobalStates) GlobalStates.setWallpaperSolarSyncEnabled(!GlobalStates.wallpaperSolarSyncEnabled);
+            } else if (focusedAutomationIndex === 9) {
                 // "All Wallpapers"
                 if (GlobalStates) {
                     GlobalStates.setWallpaperRandomSourceFilters([]);
                 }
-            } else if (focusedAutomationIndex >= 8) {
-                let optIdx = focusedAutomationIndex - 8;
+            } else if (focusedAutomationIndex >= 10) {
+                let optIdx = focusedAutomationIndex - 10;
                 if (root.availableSourceOptions && optIdx < root.availableSourceOptions.length) {
                     let key = root.availableSourceOptions[optIdx].key;
                     if (GlobalStates) {
@@ -686,6 +837,7 @@ FocusScope {
     }
 
     Component.onCompleted: {
+        initCustomInput();
         syncSectionFocus(0);
     }
 
@@ -1032,14 +1184,15 @@ FocusScope {
                                                     elide: Text.ElideRight
                                                 }
 
-                                                Text {
+                                                MarqueeText {
                                                     Layout.fillWidth: true
                                                     text: modelData.desc
                                                     font.family: Config.theme.font
                                                     font.pixelSize: Styling.fontSize(-3)
                                                     color: easeCard.isSelected ? Colors.overPrimary : Colors.outline
-                                                    opacity: easeCard.isSelected ? 0.85 : 1.0
-                                                    elide: Text.ElideRight
+                                                    textOpacity: easeCard.isSelected ? 0.85 : 1.0
+                                                    hovered: maEase.containsMouse
+                                                    isSelected: easeCard.isSelected
                                                 }
                                             }
 
@@ -1185,110 +1338,82 @@ FocusScope {
                         }
                     }
 
-                    // Card 1: Periodic Wallpaper Rotation
+                    // Card 1: Automatic Wallpaper Rotation
                     StyledRect {
                         id: periodicCard
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 74
+                        Layout.preferredHeight: periodicColumn.implicitHeight + 20
                         readonly property bool isPeriodic: GlobalStates && GlobalStates.wallpaperPeriodicEnabled
-                        readonly property int periodicInt: GlobalStates ? GlobalStates.wallpaperPeriodicInterval : 15
+                        readonly property int periodicSec: root.currentPeriodicSeconds
                         variant: "pane"
                         radius: Styling.radius(4)
 
-                        RowLayout {
+                        ColumnLayout {
+                            id: periodicColumn
                             anchors.fill: parent
                             anchors.margins: 10
-                            spacing: 14
+                            spacing: 10
 
-                            // Toggle Area
-                            StyledRect {
-                                id: periodicToggleRect
-                                Layout.preferredWidth: 240
-                                Layout.fillHeight: true
-                                readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 0
-                                variant: isFocused || toggleMa.containsMouse ? "focus" : "pane"
-                                radius: Styling.radius(3)
+                            // Row 1: Header + Master Toggle
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
 
-                                Rectangle {
-                                    anchors.fill: parent
-                                    color: "transparent"
-                                    border.color: Colors.primary
-                                    border.width: 2
-                                    radius: Styling.radius(3)
-                                    visible: periodicToggleRect.isFocused
+                                Item {
+                                    Layout.preferredWidth: 32
+                                    Layout.preferredHeight: 32
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Icons.timer
+                                        font.family: Icons.font
+                                        font.pixelSize: 22
+                                        color: periodicCard.isPeriodic ? Colors.primary : Colors.overSurface
+                                    }
                                 }
 
-                                MouseArea {
-                                    id: toggleMa
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+
+                                    Text {
+                                        text: "Automatic Rotation"
+                                        font.family: Config.theme.font
+                                        font.pixelSize: Styling.fontSize(0)
+                                        font.weight: Font.Bold
+                                        color: Colors.overBackground
+                                    }
+
+                                    Text {
+                                        text: periodicCard.isPeriodic ? ("Rotates every " + root.formatDuration(periodicCard.periodicSec)) : "Automatic rotation disabled"
+                                        font.family: Config.theme.font
+                                        font.pixelSize: Styling.fontSize(-3)
+                                        color: periodicCard.isPeriodic ? Colors.primary : Colors.outline
+                                        elide: Text.ElideRight
+                                    }
+                                }
+
+                                Switch {
+                                    id: periodicSwitch
+                                    checked: periodicCard.isPeriodic
+                                    focusPolicy: Qt.NoFocus
+                                    onToggled: {
                                         root.currentSection = 3;
                                         root.focusedAutomationIndex = 0;
-                                        if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(!periodicCard.isPeriodic);
-                                    }
-                                    onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 6
-                                        spacing: 8
-
-                                        Item {
-                                            Layout.preferredWidth: 32
-                                            Layout.preferredHeight: 32
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: Icons.timer
-                                                font.family: Icons.font
-                                                font.pixelSize: 22
-                                                color: periodicCard.isPeriodic ? Colors.primary : Colors.overSurface
-                                            }
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 1
-
-                                            Text {
-                                                text: "Periodic Rotation"
-                                                font.family: Config.theme.font
-                                                font.pixelSize: Styling.fontSize(0)
-                                                font.weight: Font.Bold
-                                                color: Colors.overBackground
-                                            }
-
-                                            Text {
-                                                text: periodicCard.isPeriodic ? ("Rotates every " + periodicCard.periodicInt + "m") : "Automatic switching disabled"
-                                                font.family: Config.theme.font
-                                                font.pixelSize: Styling.fontSize(-3)
-                                                color: periodicCard.isPeriodic ? Colors.primary : Colors.outline
-                                            }
-                                        }
-
-                                        Switch {
-                                            checked: periodicCard.isPeriodic
-                                            focusPolicy: Qt.NoFocus
-                                            onToggled: {
-                                                root.currentSection = 3;
-                                                root.focusedAutomationIndex = 0;
-                                                if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(checked);
-                                            }
-                                        }
+                                        if (GlobalStates) GlobalStates.setWallpaperPeriodicEnabled(checked);
                                     }
                                 }
                             }
 
+                            // Divider
                             Rectangle {
-                                Layout.fillHeight: true
-                                Layout.preferredWidth: 1
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 1
                                 color: Colors.outline
-                                opacity: 0.2
+                                opacity: 0.15
                             }
 
-                            // Interval Pills
+                            // Presets Row + Dedicated Custom Timer Button
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 6
@@ -1302,11 +1427,10 @@ FocusScope {
                                         required property var modelData
                                         required property int index
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: 38
+                                        Layout.preferredHeight: 36
 
-                                        readonly property bool isSelected: periodicCard.periodicInt === modelData.value
+                                        readonly property bool isSelected: !root.showCustomInput && periodicCard.periodicSec === modelData.sec
                                         readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === (index + 1)
-
                                         variant: isSelected ? "primary" : ((maInt.containsMouse || isFocused) ? "focus" : "pane")
                                         radius: Styling.radius(3)
 
@@ -1325,12 +1449,13 @@ FocusScope {
                                             hoverEnabled: periodicCard.isPeriodic
                                             cursorShape: periodicCard.isPeriodic ? Qt.PointingHandCursor : Qt.ArrowCursor
                                             onClicked: {
+                                                root.showCustomInput = false;
+                                                root.currentSection = 3;
+                                                root.focusedAutomationIndex = index + 1;
                                                 if (!periodicCard.isPeriodic && GlobalStates) {
                                                     GlobalStates.setWallpaperPeriodicEnabled(true);
                                                 }
-                                                root.currentSection = 3;
-                                                root.focusedAutomationIndex = index + 1;
-                                                if (GlobalStates) GlobalStates.setWallpaperPeriodicInterval(modelData.value);
+                                                if (GlobalStates) GlobalStates.setWallpaperPeriodicSeconds(modelData.sec);
                                             }
                                             onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
@@ -1341,6 +1466,835 @@ FocusScope {
                                                 font.pixelSize: Styling.fontSize(-2)
                                                 font.weight: intCard.isSelected ? Font.Bold : Font.Medium
                                                 color: intCard.isSelected ? Colors.overPrimary : Colors.overSurface
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Distinct Dedicated Button: Custom Timer
+                                StyledRect {
+                                    id: customTimerButton
+                                    Layout.preferredWidth: customBtnLayout.implicitWidth + 24
+                                    Layout.preferredHeight: 36
+                                    readonly property bool isCustomActive: !root.isStandardPreset(periodicCard.periodicSec)
+                                    readonly property bool isHighlighted: root.showCustomInput || isCustomActive
+                                    readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 7
+                                    variant: isHighlighted ? "primary" : ((maCustomBtn.containsMouse || isFocused) ? "focus" : "pane")
+                                    radius: Styling.radius(3)
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "transparent"
+                                        border.color: customTimerButton.isHighlighted ? Colors.overPrimary : Colors.primary
+                                        border.width: 2
+                                        radius: Styling.radius(3)
+                                        visible: customTimerButton.isFocused
+                                    }
+
+                                    MouseArea {
+                                        id: maCustomBtn
+                                        anchors.fill: parent
+                                        hoverEnabled: periodicCard.isPeriodic
+                                        cursorShape: periodicCard.isPeriodic ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                        onClicked: {
+                                            root.currentSection = 3;
+                                            root.focusedAutomationIndex = 7;
+                                            root.showCustomInput = !root.showCustomInput;
+                                            if (root.showCustomInput) {
+                                                root.initCustomInput();
+                                            }
+                                        }
+                                        onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
+
+                                        RowLayout {
+                                            id: customBtnLayout
+                                            anchors.centerIn: parent
+                                            spacing: 6
+
+                                            Text {
+                                                text: Icons.timer || "⏱"
+                                                font.family: Icons.font
+                                                font.pixelSize: 13
+                                                color: customTimerButton.isHighlighted ? Colors.overPrimary : Colors.primary
+                                            }
+
+                                            Text {
+                                                text: customTimerButton.isCustomActive ? ("Custom (" + root.formatDuration(periodicCard.periodicSec) + ")") : "Custom Timer..."
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-2)
+                                                font.weight: customTimerButton.isHighlighted ? Font.Bold : Font.Medium
+                                                color: customTimerButton.isHighlighted ? Colors.overPrimary : Colors.overSurface
+                                            }
+
+                                            Text {
+                                                text: root.showCustomInput ? "▲" : "▼"
+                                                font.family: Config.theme.font
+                                                font.pixelSize: 10
+                                                color: customTimerButton.isHighlighted ? Colors.overPrimary : Colors.outline
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Dedicated Custom Timer Configuration Card
+                            StyledRect {
+                                id: customBuilderCard
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: customBuilderCol.implicitHeight + 20
+                                visible: root.showCustomInput || !root.isStandardPreset(periodicCard.periodicSec)
+                                variant: "pane"
+                                radius: Styling.radius(4)
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: "transparent"
+                                    border.color: Colors.primary
+                                    border.width: 1
+                                    opacity: 0.25
+                                    radius: Styling.radius(4)
+                                }
+
+                                ColumnLayout {
+                                    id: customBuilderCol
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 10
+
+                                    // Header
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        Text {
+                                            text: Icons.timer || "⏱"
+                                            font.family: Icons.font
+                                            font.pixelSize: 14
+                                            color: Colors.primary
+                                        }
+
+                                        Text {
+                                            text: "CUSTOM ROTATION INTERVAL"
+                                            font.family: Config.theme.font
+                                            font.pixelSize: Styling.fontSize(-2)
+                                            font.weight: Font.Bold
+                                            color: Colors.primary
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        StyledRect {
+                                            Layout.preferredHeight: 22
+                                            Layout.preferredWidth: activeDurText.implicitWidth + 14
+                                            variant: "focus"
+                                            radius: Styling.radius(1)
+
+                                            Text {
+                                                id: activeDurText
+                                                anchors.centerIn: parent
+                                                text: "Active: Every " + root.formatDuration(periodicCard.periodicSec)
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-3)
+                                                font.weight: Font.Bold
+                                                color: Colors.primary
+                                            }
+                                        }
+                                    }
+
+                                    // Stepper Containers Row + Apply Button
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 12
+
+                                        // 1. Hours Stepper Card
+                                        StyledRect {
+                                            Layout.preferredWidth: 140
+                                            Layout.preferredHeight: 64
+                                            variant: "common"
+                                            radius: Styling.radius(3)
+
+                                            ColumnLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 3
+
+                                                Text {
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: "HOURS"
+                                                    font.family: Config.theme.font
+                                                    font.pixelSize: Styling.fontSize(-4)
+                                                    font.weight: Font.Bold
+                                                    color: Colors.outline
+                                                }
+
+                                                RowLayout {
+                                                    spacing: 6
+
+                                                    // [-] Button
+                                                    StyledRect {
+                                                        Layout.preferredWidth: 32
+                                                        Layout.preferredHeight: 32
+                                                        variant: maHMinus.containsMouse ? "primary" : "focus"
+                                                        radius: Styling.radius(2)
+
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            color: "transparent"
+                                                            border.color: Colors.primary
+                                                            border.width: 1
+                                                            opacity: maHMinus.containsMouse ? 1.0 : 0.35
+                                                            radius: Styling.radius(2)
+                                                        }
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: Icons.minus
+                                                            font.family: Icons.font
+                                                            font.pixelSize: 14
+                                                            font.bold: true
+                                                            color: maHMinus.containsMouse ? Colors.overPrimary : Colors.primary
+                                                        }
+
+                                                        MouseArea {
+                                                            id: maHMinus
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: { root.customHours = Math.max(0, root.customHours - 1); }
+                                                        }
+                                                    }
+
+                                                    // Number Input Box
+                                                    TextField {
+                                                        id: inputHours
+                                                        Layout.preferredWidth: 46
+                                                        Layout.preferredHeight: 32
+                                                        text: String(root.customHours)
+                                                        horizontalAlignment: TextInput.AlignHCenter
+                                                        font.family: Config.theme.monoFont
+                                                        font.pixelSize: Styling.fontSize(1)
+                                                        font.weight: Font.Bold
+                                                        color: Colors.overBackground
+                                                        validator: IntValidator { bottom: 0; top: 23 }
+                                                        selectByMouse: true
+                                                        Binding on text {
+                                                            value: String(root.customHours)
+                                                            when: !inputHours.activeFocus
+                                                        }
+                                                        background: StyledRect {
+                                                            variant: inputHours.activeFocus ? "focus" : "pane"
+                                                            radius: Styling.radius(2)
+                                                            Rectangle {
+                                                                anchors.fill: parent
+                                                                color: "transparent"
+                                                                border.color: inputHours.activeFocus ? Colors.primary : Colors.outline
+                                                                border.width: 1
+                                                                opacity: inputHours.activeFocus ? 1.0 : 0.25
+                                                                radius: Styling.radius(2)
+                                                            }
+                                                        }
+                                                        onTextChanged: {
+                                                            let val = parseInt(text);
+                                                            if (!isNaN(val) && val >= 0 && val <= 23) root.customHours = val;
+                                                        }
+                                                    }
+
+                                                    // [+] Button
+                                                    StyledRect {
+                                                        Layout.preferredWidth: 32
+                                                        Layout.preferredHeight: 32
+                                                        variant: maHPlus.containsMouse ? "primary" : "focus"
+                                                        radius: Styling.radius(2)
+
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            color: "transparent"
+                                                            border.color: Colors.primary
+                                                            border.width: 1
+                                                            opacity: maHPlus.containsMouse ? 1.0 : 0.35
+                                                            radius: Styling.radius(2)
+                                                        }
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: Icons.plus
+                                                            font.family: Icons.font
+                                                            font.pixelSize: 14
+                                                            font.bold: true
+                                                            color: maHPlus.containsMouse ? Colors.overPrimary : Colors.primary
+                                                        }
+
+                                                        MouseArea {
+                                                            id: maHPlus
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: { root.customHours = Math.min(23, root.customHours + 1); }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // 2. Minutes Stepper Card
+                                        StyledRect {
+                                            Layout.preferredWidth: 140
+                                            Layout.preferredHeight: 64
+                                            variant: "common"
+                                            radius: Styling.radius(3)
+
+                                            ColumnLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 3
+
+                                                Text {
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: "MINUTES"
+                                                    font.family: Config.theme.font
+                                                    font.pixelSize: Styling.fontSize(-4)
+                                                    font.weight: Font.Bold
+                                                    color: Colors.outline
+                                                }
+
+                                                RowLayout {
+                                                    spacing: 6
+
+                                                    // [-] Button
+                                                    StyledRect {
+                                                        Layout.preferredWidth: 32
+                                                        Layout.preferredHeight: 32
+                                                        variant: maMMinus.containsMouse ? "primary" : "focus"
+                                                        radius: Styling.radius(2)
+
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            color: "transparent"
+                                                            border.color: Colors.primary
+                                                            border.width: 1
+                                                            opacity: maMMinus.containsMouse ? 1.0 : 0.35
+                                                            radius: Styling.radius(2)
+                                                        }
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: Icons.minus
+                                                            font.family: Icons.font
+                                                            font.pixelSize: 14
+                                                            font.bold: true
+                                                            color: maMMinus.containsMouse ? Colors.overPrimary : Colors.primary
+                                                        }
+
+                                                        MouseArea {
+                                                            id: maMMinus
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: { root.customMinutes = Math.max(0, root.customMinutes - 1); }
+                                                        }
+                                                    }
+
+                                                    // Number Input Box
+                                                    TextField {
+                                                        id: inputMinutes
+                                                        Layout.preferredWidth: 46
+                                                        Layout.preferredHeight: 32
+                                                        text: String(root.customMinutes)
+                                                        horizontalAlignment: TextInput.AlignHCenter
+                                                        font.family: Config.theme.monoFont
+                                                        font.pixelSize: Styling.fontSize(1)
+                                                        font.weight: Font.Bold
+                                                        color: Colors.overBackground
+                                                        validator: IntValidator { bottom: 0; top: 59 }
+                                                        selectByMouse: true
+                                                        Binding on text {
+                                                            value: String(root.customMinutes)
+                                                            when: !inputMinutes.activeFocus
+                                                        }
+                                                        background: StyledRect {
+                                                            variant: inputMinutes.activeFocus ? "focus" : "pane"
+                                                            radius: Styling.radius(2)
+                                                            Rectangle {
+                                                                anchors.fill: parent
+                                                                color: "transparent"
+                                                                border.color: inputMinutes.activeFocus ? Colors.primary : Colors.outline
+                                                                border.width: 1
+                                                                opacity: inputMinutes.activeFocus ? 1.0 : 0.25
+                                                                radius: Styling.radius(2)
+                                                            }
+                                                        }
+                                                        onTextChanged: {
+                                                            let val = parseInt(text);
+                                                            if (!isNaN(val) && val >= 0 && val <= 59) root.customMinutes = val;
+                                                        }
+                                                    }
+
+                                                    // [+] Button
+                                                    StyledRect {
+                                                        Layout.preferredWidth: 32
+                                                        Layout.preferredHeight: 32
+                                                        variant: maMPlus.containsMouse ? "primary" : "focus"
+                                                        radius: Styling.radius(2)
+
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            color: "transparent"
+                                                            border.color: Colors.primary
+                                                            border.width: 1
+                                                            opacity: maMPlus.containsMouse ? 1.0 : 0.35
+                                                            radius: Styling.radius(2)
+                                                        }
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: Icons.plus
+                                                            font.family: Icons.font
+                                                            font.pixelSize: 14
+                                                            font.bold: true
+                                                            color: maMPlus.containsMouse ? Colors.overPrimary : Colors.primary
+                                                        }
+
+                                                        MouseArea {
+                                                            id: maMPlus
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: { root.customMinutes = Math.min(59, root.customMinutes + 1); }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // 3. Seconds Stepper Card
+                                        StyledRect {
+                                            Layout.preferredWidth: 140
+                                            Layout.preferredHeight: 64
+                                            variant: "common"
+                                            radius: Styling.radius(3)
+
+                                            ColumnLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 3
+
+                                                Text {
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: "SECONDS"
+                                                    font.family: Config.theme.font
+                                                    font.pixelSize: Styling.fontSize(-4)
+                                                    font.weight: Font.Bold
+                                                    color: Colors.outline
+                                                }
+
+                                                RowLayout {
+                                                    spacing: 6
+
+                                                    // [-] Button
+                                                    StyledRect {
+                                                        Layout.preferredWidth: 32
+                                                        Layout.preferredHeight: 32
+                                                        variant: maSMinus.containsMouse ? "primary" : "focus"
+                                                        radius: Styling.radius(2)
+
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            color: "transparent"
+                                                            border.color: Colors.primary
+                                                            border.width: 1
+                                                            opacity: maSMinus.containsMouse ? 1.0 : 0.35
+                                                            radius: Styling.radius(2)
+                                                        }
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: Icons.minus
+                                                            font.family: Icons.font
+                                                            font.pixelSize: 14
+                                                            font.bold: true
+                                                            color: maSMinus.containsMouse ? Colors.overPrimary : Colors.primary
+                                                        }
+
+                                                        MouseArea {
+                                                            id: maSMinus
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: { root.customSeconds = Math.max(0, root.customSeconds - 1); }
+                                                        }
+                                                    }
+
+                                                    // Number Input Box
+                                                    TextField {
+                                                        id: inputSeconds
+                                                        Layout.preferredWidth: 46
+                                                        Layout.preferredHeight: 32
+                                                        text: String(root.customSeconds)
+                                                        horizontalAlignment: TextInput.AlignHCenter
+                                                        font.family: Config.theme.monoFont
+                                                        font.pixelSize: Styling.fontSize(1)
+                                                        font.weight: Font.Bold
+                                                        color: Colors.overBackground
+                                                        validator: IntValidator { bottom: 0; top: 59 }
+                                                        selectByMouse: true
+                                                        Binding on text {
+                                                            value: String(root.customSeconds)
+                                                            when: !inputSeconds.activeFocus
+                                                        }
+                                                        background: StyledRect {
+                                                            variant: inputSeconds.activeFocus ? "focus" : "pane"
+                                                            radius: Styling.radius(2)
+                                                            Rectangle {
+                                                                anchors.fill: parent
+                                                                color: "transparent"
+                                                                border.color: inputSeconds.activeFocus ? Colors.primary : Colors.outline
+                                                                border.width: 1
+                                                                opacity: inputSeconds.activeFocus ? 1.0 : 0.25
+                                                                radius: Styling.radius(2)
+                                                            }
+                                                        }
+                                                        onTextChanged: {
+                                                            let val = parseInt(text);
+                                                            if (!isNaN(val) && val >= 0 && val <= 59) root.customSeconds = val;
+                                                        }
+                                                    }
+
+                                                    // [+] Button
+                                                    StyledRect {
+                                                        Layout.preferredWidth: 32
+                                                        Layout.preferredHeight: 32
+                                                        variant: maSPlus.containsMouse ? "primary" : "focus"
+                                                        radius: Styling.radius(2)
+
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            color: "transparent"
+                                                            border.color: Colors.primary
+                                                            border.width: 1
+                                                            opacity: maSPlus.containsMouse ? 1.0 : 0.35
+                                                            radius: Styling.radius(2)
+                                                        }
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: Icons.plus
+                                                            font.family: Icons.font
+                                                            font.pixelSize: 14
+                                                            font.bold: true
+                                                            color: maSPlus.containsMouse ? Colors.overPrimary : Colors.primary
+                                                        }
+
+                                                        MouseArea {
+                                                            id: maSPlus
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: { root.customSeconds = Math.min(59, root.customSeconds + 1); }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        // Apply Custom Timer Button
+                                        StyledRect {
+                                            id: applyBtn
+                                            Layout.preferredHeight: 48
+                                            Layout.preferredWidth: applyBtnLayout.implicitWidth + 28
+                                            variant: maApply.containsMouse ? "focus" : "primary"
+                                            radius: Styling.radius(3)
+
+                                            MouseArea {
+                                                id: maApply
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.applyCustomTimer()
+
+                                                RowLayout {
+                                                    id: applyBtnLayout
+                                                    anchors.centerIn: parent
+                                                    spacing: 8
+
+                                                    Text {
+                                                        text: Icons.accept
+                                                        font.family: Icons.font
+                                                        font.pixelSize: 16
+                                                        color: applyBtn.variant === "primary" ? Colors.overPrimary : Colors.primary
+                                                    }
+
+                                                    ColumnLayout {
+                                                        spacing: 0
+                                                        Text {
+                                                            text: "Set Timer"
+                                                            font.family: Config.theme.font
+                                                            font.pixelSize: Styling.fontSize(0)
+                                                            font.weight: Font.Bold
+                                                            color: applyBtn.variant === "primary" ? Colors.overPrimary : Colors.primary
+                                                        }
+                                                        Text {
+                                                            text: root.formatDuration(Math.max(5, (root.customHours * 3600) + (root.customMinutes * 60) + root.customSeconds))
+                                                            font.family: Config.theme.font
+                                                            font.pixelSize: Styling.fontSize(-3)
+                                                            color: applyBtn.variant === "primary" ? Colors.overPrimary : Colors.primary
+                                                            opacity: 0.85
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                    }
+                                }
+                                }
+                            }
+                        }
+                    }
+
+                    // Card 2: Match Time of the Day (SEPARATE TOGGLE BUTTON / FEATURE)
+                    StyledRect {
+                        id: solarCard
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: solarColumn.implicitHeight + 20
+                        variant: "pane"
+                        radius: Styling.radius(4)
+
+                        ColumnLayout {
+                            id: solarColumn
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 10
+
+                            // Row 1: Header + Independent Master Toggle
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                Item {
+                                    Layout.preferredWidth: 32
+                                    Layout.preferredHeight: 32
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: root.getSolarPhaseInfo(root.currentSolarPeriod).icon
+                                        font.family: Icons.font
+                                        font.pixelSize: 22
+                                        color: root.isSolarSync ? Colors.primary : Colors.overSurface
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+
+                                    RowLayout {
+                                        spacing: 8
+                                        Text {
+                                            text: "Match Time of Day"
+                                            font.family: Config.theme.font
+                                            font.pixelSize: Styling.fontSize(0)
+                                            font.weight: Font.Bold
+                                            color: Colors.overBackground
+                                        }
+
+                                        StyledRect {
+                                            Layout.preferredHeight: 18
+                                            Layout.preferredWidth: curPhaseBadgeText.implicitWidth + 10
+                                            variant: root.isSolarSync ? "primary" : "focus"
+                                            radius: Styling.radius(1)
+
+                                            Text {
+                                                id: curPhaseBadgeText
+                                                anchors.centerIn: parent
+                                                text: (root.currentSolarPeriod.toUpperCase()) + " NOW"
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-4)
+                                                font.weight: Font.Bold
+                                                color: root.isSolarSync ? Colors.overPrimary : Colors.primary
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: root.isSolarSync ? "Active: Selecting wallpapers matching current " + root.currentSolarPeriod + " lighting" : "Disabled: Wallpaper rotation selects from all color palettes"
+                                        font.family: Config.theme.font
+                                        font.pixelSize: Styling.fontSize(-3)
+                                        color: root.isSolarSync ? Colors.primary : Colors.outline
+                                        elide: Text.ElideRight
+                                    }
+                                }
+
+                                Switch {
+                                    id: solarSwitch
+                                    checked: root.isSolarSync
+                                    focusPolicy: Qt.NoFocus
+                                    onToggled: {
+                                        if (GlobalStates) GlobalStates.setWallpaperSolarSyncEnabled(checked);
+                                    }
+                                }
+                            }
+
+                            // Divider
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 1
+                                color: Colors.outline
+                                opacity: 0.15
+                            }
+
+                            // 4 Solar Phase Cards Strip
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: 4
+                                rowSpacing: 6
+                                columnSpacing: 6
+                                opacity: root.isSolarSync ? 1.0 : 0.55
+
+                                Repeater {
+                                    model: [
+                                        { id: "morning", title: "Morning", time: "06:00 – 11:00", icon: Icons.sunDim, desc: "Fresh daylight & bright pastels" },
+                                        { id: "afternoon", title: "Afternoon", time: "11:00 – 17:00", icon: Icons.sun, desc: "Warm, bright & vibrant daylight" },
+                                        { id: "sunset", title: "Sunset", time: "17:00 – 21:00", icon: Icons.sunDim, desc: "Golden hour, warm orange & dusk" },
+                                        { id: "night", title: "Night", time: "21:00 – 06:00", icon: Icons.moon, desc: "Dark, starry night & deep tones" }
+                                    ]
+
+                                    delegate: StyledRect {
+                                        id: phaseMiniCard
+                                        required property var modelData
+                                        required property int index
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 74
+
+                                        readonly property bool isCurrent: root.currentSolarPeriod === modelData.id
+                                        readonly property int matchingCount: root.getSolarCount(modelData.id)
+                                        variant: isCurrent ? "focus" : "pane"
+                                        radius: Styling.radius(3)
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            color: "transparent"
+                                            border.color: Colors.primary
+                                            border.width: phaseMiniCard.isCurrent ? 2 : 0
+                                            radius: Styling.radius(3)
+                                            visible: phaseMiniCard.isCurrent
+                                        }
+
+                                        ColumnLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            spacing: 2
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 4
+
+                                                Text {
+                                                    text: modelData.icon
+                                                    font.family: Icons.font
+                                                    font.pixelSize: 14
+                                                    color: phaseMiniCard.isCurrent ? Colors.primary : Colors.overBackground
+                                                }
+
+                                                Text {
+                                                    text: modelData.title
+                                                    font.family: Config.theme.font
+                                                    font.pixelSize: Styling.fontSize(-1)
+                                                    font.weight: Font.Bold
+                                                    color: Colors.overBackground
+                                                }
+
+                                                Item { Layout.fillWidth: true }
+
+                                                StyledRect {
+                                                    visible: phaseMiniCard.isCurrent
+                                                    Layout.preferredHeight: 16
+                                                    Layout.preferredWidth: livePillText.implicitWidth + 6
+                                                    variant: "primary"
+                                                    radius: Styling.radius(1)
+                                                    Text {
+                                                        id: livePillText
+                                                        anchors.centerIn: parent
+                                                        text: "ACTIVE"
+                                                        font.family: Config.theme.font
+                                                        font.pixelSize: Styling.fontSize(-5)
+                                                        font.weight: Font.Bold
+                                                        color: Colors.overPrimary
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                text: modelData.time
+                                                font.family: Config.theme.monoFont
+                                                font.pixelSize: Styling.fontSize(-4)
+                                                color: Colors.outline
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: modelData.desc
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-4)
+                                                color: Colors.outline
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Text {
+                                                text: phaseMiniCard.matchingCount > 0 ? (phaseMiniCard.matchingCount + " wallpapers match") : "Keywords fallback"
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-4)
+                                                font.weight: Font.Medium
+                                                color: phaseMiniCard.isCurrent ? Colors.primary : Colors.overSurface
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Footer row: info note + re-index button
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Palette matching applies to both automatic rotation and shortcut triggers (ambxst run wallpaper-random)."
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-3)
+                                    color: Colors.outline
+                                }
+
+                                StyledRect {
+                                    id: refreshIndexBtn
+                                    Layout.preferredHeight: 28
+                                    Layout.preferredWidth: refreshText.implicitWidth + 18
+                                    variant: maRef.containsMouse ? "focus" : "pane"
+                                    radius: Styling.radius(2)
+
+                                    MouseArea {
+                                        id: maRef
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (GlobalStates) GlobalStates.refreshSolarCache();
+                                        }
+
+                                        RowLayout {
+                                            anchors.centerIn: parent
+                                            spacing: 4
+
+                                            Text {
+                                                text: "↻"
+                                                font.family: Config.theme.font
+                                                font.pixelSize: 12
+                                                color: Colors.primary
+                                            }
+
+                                            Text {
+                                                id: refreshText
+                                                text: "Re-index Colors"
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-3)
+                                                font.weight: Font.Medium
+                                                color: Colors.overBackground
                                             }
                                         }
                                     }
@@ -1416,11 +2370,11 @@ FocusScope {
                                 Layout.fillWidth: true
                                 spacing: 6
 
-                                // "All Wallpapers" chip (index: 7)
+                                // "All Wallpapers" chip (index: 9)
                                 StyledRect {
                                     id: allChip
                                     readonly property bool isSelected: !GlobalStates || !GlobalStates.wallpaperRandomSourceFilters || GlobalStates.wallpaperRandomSourceFilters.length === 0
-                                    readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 7
+                                    readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === 9
                                     variant: isSelected ? "primary" : ((allMa.containsMouse || isFocused) ? "focus" : "pane")
                                     radius: Styling.radius(3)
                                     height: 32
@@ -1442,7 +2396,7 @@ FocusScope {
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             root.currentSection = 3;
-                                            root.focusedAutomationIndex = 7;
+                                            root.focusedAutomationIndex = 9;
                                             if (GlobalStates) GlobalStates.setWallpaperRandomSourceFilters([]);
                                         }
                                         onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
@@ -1479,7 +2433,7 @@ FocusScope {
                                         id: chipCard
                                         required property var modelData
                                         required property int index
-                                        readonly property int itemIndex: 8 + index
+                                        readonly property int itemIndex: 10 + index
 
                                         readonly property bool isSelected: (GlobalStates && GlobalStates.wallpaperRandomSourceFilters && GlobalStates.wallpaperRandomSourceFilters.includes(modelData.key))
                                         readonly property bool isFocused: root.currentSection === 3 && root.focusedAutomationIndex === itemIndex
@@ -1536,6 +2490,198 @@ FocusScope {
                             }
                         }
                     }
+
+                    // Card 3: Live Wallpaper Playback & Power Saving
+                    StyledRect {
+                        id: playbackPauseCard
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 104
+                        variant: "pane"
+                        radius: Styling.radius(4)
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    text: Icons.play
+                                    font.family: Icons.font
+                                    font.pixelSize: 18
+                                    color: Colors.primary
+                                }
+
+                                Text {
+                                    text: "Live Wallpaper Playback & Power Saving"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(0)
+                                    font.weight: Font.Bold
+                                    color: Colors.overBackground
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                Text {
+                                    text: "Pauses live wallpaper to save VRAM and GPU resources"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-3)
+                                    color: Colors.outline
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Repeater {
+                                    model: root.pauseOptions
+
+                                    delegate: StyledRect {
+                                        id: pauseCard
+                                        required property var modelData
+                                        required property int index
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 52
+
+                                        readonly property bool isSelected: modelData.id === root.currentPauseMode
+
+                                        variant: isSelected ? "primary" : (maPause.containsMouse ? "focus" : "pane")
+                                        radius: Styling.radius(3)
+
+                                        MouseArea {
+                                            id: maPause
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (GlobalStates) GlobalStates.setWallpaperPauseMode(modelData.id);
+                                            }
+                                            onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 8
+                                                spacing: 8
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 1
+
+                                                    Text {
+                                                        text: modelData.title
+                                                        font.family: Config.theme.font
+                                                        font.pixelSize: Styling.fontSize(-1)
+                                                        font.weight: pauseCard.isSelected ? Font.Bold : Font.Medium
+                                                        color: pauseCard.isSelected ? Colors.overPrimary : Colors.overBackground
+                                                    }
+
+                                                    MarqueeText {
+                                                        Layout.fillWidth: true
+                                                        text: modelData.sub
+                                                        font.family: Config.theme.font
+                                                        font.pixelSize: Styling.fontSize(-3)
+                                                        color: pauseCard.isSelected ? Colors.overPrimary : Colors.outline
+                                                        hovered: maPause.containsMouse
+                                                        isSelected: pauseCard.isSelected
+                                                    }
+                                                }
+
+                                                Text {
+                                                    visible: pauseCard.isSelected
+                                                    text: Icons.accept
+                                                    font.family: Icons.font
+                                                    font.pixelSize: 14
+                                                    color: Colors.overPrimary
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Monitor Scope Selector
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 2
+                                spacing: 8
+
+                                Text {
+                                    text: "Pause Scope:"
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(-2)
+                                    font.weight: Font.Bold
+                                    color: Colors.overBackground
+                                }
+
+                                RowLayout {
+                                    spacing: 6
+
+                                    Repeater {
+                                        model: [
+                                            { id: "perScreen", title: "Current monitor only (Default)", icon: Icons.desktop },
+                                            { id: "allScreens", title: "All monitors", icon: Icons.layoutGrid }
+                                        ]
+
+                                        StyledRect {
+                                            id: scopeCard
+                                            Layout.preferredHeight: 30
+                                            Layout.preferredWidth: scopeLayout.implicitWidth + 20
+
+                                            readonly property bool isSelected: root.currentPauseScope === modelData.id
+                                            variant: isSelected ? "primary" : (maScope.containsMouse ? "focus" : "pane")
+                                            radius: Styling.radius(3)
+
+                                            MouseArea {
+                                                id: maScope
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (GlobalStates) GlobalStates.setWallpaperPauseScope(modelData.id);
+                                                }
+                                                onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
+
+                                                RowLayout {
+                                                    id: scopeLayout
+                                                    anchors.centerIn: parent
+                                                    spacing: 6
+
+                                                    Text {
+                                                        text: modelData.icon
+                                                        font.family: Icons.font
+                                                        font.pixelSize: 13
+                                                        color: scopeCard.isSelected ? Colors.overPrimary : Colors.primary
+                                                    }
+
+                                                    Text {
+                                                        text: modelData.title
+                                                        font.family: Config.theme.font
+                                                        font.pixelSize: Styling.fontSize(-2)
+                                                        font.weight: scopeCard.isSelected ? Font.Bold : Font.Medium
+                                                        color: scopeCard.isSelected ? Colors.overPrimary : Colors.overSurface
+                                                    }
+
+                                                    Text {
+                                                        visible: scopeCard.isSelected
+                                                        text: Icons.accept
+                                                        font.family: Icons.font
+                                                        font.pixelSize: 12
+                                                        color: Colors.overPrimary
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
+                            }
+                        }
+                    }
                 }
 
                 // Section 4: Material You Color Schemes
@@ -1543,6 +2689,7 @@ FocusScope {
                     id: sectionSchemes
                     Layout.fillWidth: true
                     spacing: 6
+                    readonly property bool isPresetActive: Boolean(GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.activeColorPreset)
 
                     RowLayout {
                         Layout.fillWidth: true
@@ -1556,6 +2703,14 @@ FocusScope {
                             color: root.currentSection === 4 ? Colors.primary : Colors.overBackground
                         }
 
+                        Text {
+                            visible: sectionSchemes.isPresetActive
+                            text: "(Preset active — click a scheme to enable)"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-3)
+                            color: Colors.outline
+                        }
+
                         Item { Layout.fillWidth: true }
                     }
 
@@ -1564,6 +2719,11 @@ FocusScope {
                         columns: 4
                         rowSpacing: 6
                         columnSpacing: 6
+                        opacity: sectionSchemes.isPresetActive ? 0.65 : 1.0
+
+                        Behavior on opacity {
+                            NumberAnimation { duration: 150 }
+                        }
 
                         Repeater {
                             model: root.matugenSchemes
@@ -1575,7 +2735,7 @@ FocusScope {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 40
 
-                                readonly property bool isSelected: (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.currentMatugenScheme === modelData.id)
+                                readonly property bool isSelected: !sectionSchemes.isPresetActive && (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.currentMatugenScheme === modelData.id)
                                 readonly property bool isFocused: root.currentSection === 4 && root.focusedSchemeIndex === index
 
                                 variant: isSelected ? "primary" : ((maScheme.containsMouse || isFocused) ? "focus" : "pane")
@@ -1649,6 +2809,14 @@ FocusScope {
                             color: root.currentSection === 5 ? Colors.primary : Colors.overBackground
                         }
 
+                        Text {
+                            visible: Boolean(GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.activeColorPreset)
+                            text: "(Click active preset to toggle off)"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-3)
+                            color: Colors.outline
+                        }
+
                         Item { Layout.fillWidth: true }
                     }
 
@@ -1697,13 +2865,25 @@ FocusScope {
                                     }
                                     onWheel: (wheel) => root.scrollBy(-((wheel.pixelDelta && wheel.pixelDelta.y !== 0) ? wheel.pixelDelta.y : wheel.angleDelta.y))
 
-                                    Text {
+                                    RowLayout {
                                         anchors.centerIn: parent
-                                        text: String(modelData)
-                                        font.family: Config.theme.font
-                                        font.pixelSize: Styling.fontSize(-1)
-                                        font.weight: presetCard.isSelected ? Font.Bold : Font.Medium
-                                        color: presetCard.isSelected ? Colors.overPrimary : Colors.overSurface
+                                        spacing: 6
+
+                                        Text {
+                                            text: String(modelData)
+                                            font.family: Config.theme.font
+                                            font.pixelSize: Styling.fontSize(-1)
+                                            font.weight: presetCard.isSelected ? Font.Bold : Font.Medium
+                                            color: presetCard.isSelected ? Colors.overPrimary : Colors.overSurface
+                                        }
+
+                                        Text {
+                                            visible: presetCard.isSelected
+                                            text: Icons.accept
+                                            font.family: Icons.font
+                                            font.pixelSize: 14
+                                            color: Colors.overPrimary
+                                        }
                                     }
                                 }
                             }
