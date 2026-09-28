@@ -48,9 +48,8 @@ git clone https://github.com/POSiTiiiV/ambxst-mods.git
 
 (If you installed the mod via the GUI/CLI installer instead of a local clone, grab just this one script from the repo above — everything it needs is bundled under `scripts/`.)
 
-This installs the coordinator to `~/.config/ambxst-sync/`, `dolphin-apply-color.py` to `~/.local/bin/`, a systemd user path+service unit that watches for wallpaper changes, and seeds `~/.config/ambxst/mods/positive.theme-sync.json` with defaults. It requires `plasma-apply-colorscheme` and `busctl` (from KDE Frameworks / plasma-workspace) to be installed already, and prints an error naming what's missing if not.
+This installs the coordinator to `~/.config/ambxst-sync/`, `dolphin-apply-color.py` to `~/.local/bin/`, a systemd user path+service unit that watches for wallpaper changes, seeds `~/.config/ambxst/mods/positive.theme-sync.json` with defaults, configures Kitty's live theme include and opacity, and injects the required Dolphin & Kitty frosted glass rules into `~/.config/hypr/lua/custom/custom_rules.lua`. It requires `plasma-apply-colorscheme` and `busctl` (from KDE Frameworks / plasma-workspace) to be installed already, and prints an error naming what's missing if not.
 
-**Requires one more manual step for the opacity/blur sliders to have something to control** — Dolphin's opacity/blur is a Hyprland window rule, which also lives outside Ambxst's source tree. `install.sh` prints the exact snippet to add to your `~/.config/hypr/lua/custom/custom_rules.lua`; without it, colors and icon theme still sync fine, the sliders just won't do anything.
 
 ## How it works
 
