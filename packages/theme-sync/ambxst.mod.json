@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "positive.theme-sync",
   "name": "Theme Sync",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Syncs the wallpaper's Material You palette live to Kitty, btop, Starship, Fastfetch, Spicetify, Fuzzel, Sonora and Dolphin, with per-app on/off toggles and configurable Dolphin opacity/blur. Requires a one-time setup script — see README.",
   "license": "MIT",
   "author": "POSiTiiiV",

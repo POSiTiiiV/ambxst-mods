@@ -10,17 +10,20 @@ class StarshipTarget(BaseTarget):
     def generate(self, palette: Palette) -> None:
         starship_path = os.path.expanduser("~/.config/starship.toml")
 
-        os_bg = palette.pill_os
-        dir_bg = palette.pill_dir
-        git_bg = palette.pill_git
-        surf_bg = palette.surface
-        accent = palette.accent
-        light_accent = palette.light_accent
-        fg = palette.foreground
-        warn = palette.color3
-        err = palette.color1
+        # This prompt's colors (bg:237/238/239/236, fg:255/250/252/3/1) are
+        # ANSI-256 index references, not literal hex -- they're live-synced
+        # by KittyTarget writing those same indices (color236-239, color250,
+        # color252, color255) into Kitty's palette every sync. So this file
+        # never needs to be touched again after the first write; overwriting
+        # it every sync was wiping out any customization made to it since.
+        if os.path.exists(starship_path):
+            return
 
-        content = f"""# Ambxst Theme for Starship - dynamically synced from wallpaper
+        content = f"""# Ambxst Theme for Starship - colors live-synced via Kitty's ANSI
+# palette (indices 236-239, 250, 252, 255), not regenerated here. Edit
+# this file freely -- ambxst-sync won't touch it again. Reference those
+# same bg:NNN/fg:NNN indices in your own modules if you add any and want
+# them to track the wallpaper too.
 "$schema" = 'https://starship.rs/config-schema.json'
 
 format = \"\"\"

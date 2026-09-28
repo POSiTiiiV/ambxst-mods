@@ -1,7 +1,7 @@
 # Theme Sync for Ambxst
 
 [![Ambxst Compatibility](https://img.shields.io/badge/Ambxst-1.3.0%2B-blue.svg)](https://github.com/Axenide/Ambxst)
-[![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen.svg)](ambxst.mod.json)
+[![Version](https://img.shields.io/badge/Version-1.0.1-brightgreen.svg)](ambxst.mod.json)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 Syncs the wallpaper's Material You palette live, with no restarts, to:
@@ -14,6 +14,14 @@ Syncs the wallpaper's Material You palette live, with no restarts, to:
 - **Dolphin / KDE apps** — a generated Material You color scheme + icon theme, applied live via a "ping-pong" `plasma-apply-colorscheme` trick (no `plasmashell` daemon needed) plus D-Bus signals so `KIconLoader`/`KConfigWatcher` pick it up without restarting Dolphin
 
 Every app above can be individually toggled off from Ambxst's Settings, and Dolphin additionally gets **opacity** and **blur** sliders — independent of whether Dolphin's colors are synced — so you can dial in your own amount of transparency without forking the mod.
+
+**None of these overwrite your own config beyond colors** (`v1.0.1`):
+- **Starship**: colors flow through Kitty's own ANSI palette (indices 236-239, 250, 252, 255) — `KittyTarget` keeps those live-synced every wallpaper change, and Starship's `bg:237`/`fg:255`-style references pick them up automatically at render time. So `starship.toml` is written **once**, on first sync if it doesn't already exist, and never touched again — edit it freely afterward.
+- **Fuzzel**, **Spicetify**: only the `[colors]` / `[Ambxst]` section is ever touched; font, layout, prompt symbol, dimensions, and anything else you've set stays exactly as you left it.
+- **btop**, **Fastfetch**, **Dolphin**: only specific keys are patched in place (`color_theme`, a couple ANSI index refs, `AccentColor`/icon theme) — never a full-file rewrite.
+- **Kitty**, **Sonora**: colors live in their own dedicated file/JSON section, included/read separately from your main config.
+
+If you're upgrading from `v1.0.0` and already have a `starship.toml`/`fuzzel.ini` that got clobbered, re-run `scripts/install.sh` (or just copy the updated `targets/starship.py` and `targets/fuzzel.py` into `~/.config/ambxst-sync/targets/`) — the *next* sync will leave them alone from then on.
 
 ## Screenshot
 

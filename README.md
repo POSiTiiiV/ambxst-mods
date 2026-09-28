@@ -14,7 +14,7 @@ Each package has its own README with full details, screenshots, and install inst
 | [`dock-enhancements`](packages/dock-enhancements) | Dock Enhancements | `v1.0.0` | Keeps the bar/dock visible during regular window maximize (only true exclusive fullscreen hides it), plus a toggle for whether floating windows hide the dock. |
 | [`special-workspaces`](packages/special-workspaces) | Special Workspaces | `v1.0.1` | Isolated special-workspace state, dimmed highlight, per-button dot/pill indicator, dock auto-hide awareness, and correct bar-hiding for exclusive fullscreen inside a special workspace. Depends on `dock-enhancements`. |
 | [`workspace-app-indicator`](packages/workspace-app-indicator) | Workspace App Indicator | `v1.0.0` | Shows the focused app's icon + name in a separate badge beside the workspace row — works for both regular and special workspaces. Depends on `special-workspaces`. |
-| [`theme-sync`](packages/theme-sync) | Theme Sync | `v1.0.0` | Live-syncs the wallpaper's Material You palette to Kitty, btop, Starship, Fastfetch, Spicetify, Fuzzel, Sonora and Dolphin, with per-app toggles and configurable Dolphin opacity/blur. Needs one companion script — see its README. |
+| [`theme-sync`](packages/theme-sync) | Theme Sync | `v1.0.1` | Live-syncs the wallpaper's Material You palette to Kitty, btop, Starship, Fastfetch, Spicetify, Fuzzel, Sonora and Dolphin — never overwrites anything beyond colors — with per-app toggles and configurable Dolphin opacity/blur. Needs one companion script — see its README. |
 
 ---
 
