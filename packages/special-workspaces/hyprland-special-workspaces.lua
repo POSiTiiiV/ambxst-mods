@@ -8,6 +8,13 @@
 -- workspace on launch.
 -- =============================================================================
 
+-- Bezier curve used by the workspace-fade animation below when leaving
+-- special-workspace mode. Defined here (pcall-guarded in case your own
+-- config already registers a curve of this name) so this file works
+-- standalone -- it previously assumed "almostLinear" already existed,
+-- which broke on any system that hadn't separately defined it.
+pcall(hl.curve, "almostLinear", { type = "bezier", points = { {0.5, 0.5}, {0.75, 1} } })
+
 -- State synchronization for Ambxst dock
 local last_regular_ws = nil
 
