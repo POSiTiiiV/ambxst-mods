@@ -61,6 +61,73 @@ else
     echo "    Already exists, left untouched"
 fi
 
+echo "==> Configuring Kitty terminal (~/.config/kitty/kitty.conf)"
+KITTY_CONF="$HOME/.config/kitty/kitty.conf"
+mkdir -p "$HOME/.config/kitty"
+touch "$KITTY_CONF"
+
+if ! grep -q "include themes/ambxst.conf" "$KITTY_CONF"; then
+    echo -e "\n# Ambxst Dynamic Theme\ninclude themes/ambxst.conf" >> "$KITTY_CONF"
+    echo "    Added 'include themes/ambxst.conf'"
+fi
+
+if ! grep -q "background_opacity" "$KITTY_CONF"; then
+    cat >> "$KITTY_CONF" <<'EOF'
+
+# Ambxst Rice Styling
+background_opacity          0.82
+dynamic_background_opacity yes
+window_padding_width        20
+allow_remote_control        yes
+listen_on                   unix:@kitty
+EOF
+    echo "    Added frosted opacity and remote-control flags"
+fi
+
+echo "==> Configuring Qt / KDE dark theme preferences"
+gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+    kwriteconfig6 --file kdeglobals --group KDE --key widgetStyle Darkly 2>/dev/null || true
+elif command -v kwriteconfig5 >/dev/null 2>&1; then
+    kwriteconfig5 --file kdeglobals --group KDE --key widgetStyle Darkly 2>/dev/null || true
+fi
+
+echo "==> Checking Hyprland Dolphin & Kitty window rules"
+HYPR_RULES="$HOME/.config/hypr/lua/custom/custom_rules.lua"
+if [ -f "$HYPR_RULES" ]; then
+    if ! grep -q "dolphin-glass" "$HYPR_RULES"; then
+        echo "    Injecting frosted glass rules and Kawase blur into $HYPR_RULES"
+        cat >> "$HYPR_RULES" <<'EOF'
+
+-- Auto-injected by positive.theme-sync
+local dolphin_rice_defaults = { dolphinOpacity = "0.89 0.83 1.0", dolphinXray = false }
+local dolphin_rice_path = os.getenv("HOME") .. "/.config/hypr/lua/generated/theme-sync-rice.lua"
+local dolphin_rice_ok, dolphin_rice = pcall(dofile, dolphin_rice_path)
+if not dolphin_rice_ok or type(dolphin_rice) ~= "table" then
+    dolphin_rice = dolphin_rice_defaults
+end
+
+hl.window_rule({
+    name    = "dolphin-glass",
+    match   = { class = "^(org\\.kde\\.dolphin)$" },
+    opacity = dolphin_rice.dolphinOpacity,
+    xray    = dolphin_rice.dolphinXray,
+})
+
+hl.window_rule({
+    name    = "kitty-glass",
+    match   = { class = "^(kitty)$" },
+    xray    = false,
+})
+EOF
+        hyprctl reload config-only 2>/dev/null || true
+    else
+        echo "    Dolphin glass rule already present in $HYPR_RULES"
+    fi
+else
+    echo "    $HYPR_RULES not found (skip auto-inject; add dolphin-glass manually if on custom path)"
+fi
+
 echo "==> Installing systemd user units"
 mkdir -p "$HOME/.config/systemd/user"
 cp "$SCRIPT_DIR/systemd/ambxst-theme-sync.path" "$HOME/.config/systemd/user/"
@@ -71,30 +138,7 @@ systemctl --user enable --now ambxst-theme-sync.path
 echo "==> Running an initial sync"
 "$HOME/.local/bin/ambxst-theme-sync" || true
 
-cat <<'EOF'
+echo ""
+echo "==> All set! Kitty, Dolphin, and desktop apps are fully configured for live dynamic theming."
+echo "    If Kitty is running, reload it with Ctrl+Shift+F5 (or restart Kitty) to activate new opacity/padding."
 
-==> Done. One manual step remains for Dolphin opacity/blur to be adjustable
-    from Ambxst's Settings UI: add this near the top of
-    ~/.config/hypr/lua/custom/custom_rules.lua (before any window_rule that
-    references Dolphin), and point your Dolphin window_rule's opacity/xray
-    fields at dolphin_rice.dolphinOpacity / dolphin_rice.dolphinXray:
-
-    local dolphin_rice_defaults = { dolphinOpacity = "0.89 0.83 1.0", dolphinXray = false }
-    local dolphin_rice_path = os.getenv("HOME") .. "/.config/hypr/lua/generated/theme-sync-rice.lua"
-    local dolphin_rice_ok, dolphin_rice = pcall(dofile, dolphin_rice_path)
-    if not dolphin_rice_ok or type(dolphin_rice) ~= "table" then
-        dolphin_rice = dolphin_rice_defaults
-    end
-
-    hl.window_rule({
-        name    = "dolphin-glass",
-        match   = { class = "^(org\\.kde\\.dolphin)$" },
-        opacity = dolphin_rice.dolphinOpacity,
-        xray    = dolphin_rice.dolphinXray,
-    })
-
-    Then reload with: hyprctl reload
-
-    Without this step, colors/icon-theme still sync fine -- only the
-    opacity/blur settings won't have anything to apply to.
-EOF
