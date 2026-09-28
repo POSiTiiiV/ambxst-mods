@@ -441,3 +441,52 @@
  
      // Check if there are any windows on the current monitor and workspace
      readonly property bool hasWindows: effectiveWindows.length > 0
+--- a/modules/bar/workspaces/CompositorData.qml
++++ b/modules/bar/workspaces/CompositorData.qml
+@@ -34,18 +34,45 @@
+         return txt === "1";
+     }
+ 
++    // File watcher for the active isolated special workspace (positive.special-workspaces).
++    FileView {
++        id: specialWsView
++        path: "/tmp/ambxst_special_ws.txt"
++        preload: true
++        watchChanges: true
++        onFileChanged: reload()
++    }
++
++    readonly property int activeSpecialWorkspaceId: {
++        const txt = specialWsView.text() || "";
++        const lines = txt.split("\n");
++        const id = parseInt(lines[0]);
++        return (!isNaN(id) && id < 0) ? id : 0;
++    }
++
+     // Monitor-scoped fullscreen check. Only windows in true exclusive fullscreen
+     // (F11 / SUPER+SHIFT+F) count as fullscreen, so that regular window maximize
+     // (SUPER+F) keeps the bar, notch, and curved screen corners visible.
++    //
++    // A window's workspace.id must match either the monitor's *regular*
++    // active workspace, or the currently-open special workspace (if any) —
++    // isolating a special workspace keeps the monitor's reported
++    // activeWorkspace on the hidden "isolated" background workspace, so a
++    // fullscreen window inside the special workspace itself would otherwise
++    // never match and the bar would stay visible.
+     function monitorHasFullscreen(mon) {
+         if (!isExclusiveFullscreen)
+             return false;
+         if (!mon || !mon.activeWorkspace)
+             return false;
+         const wsId = mon.activeWorkspace.id;
++        const specialWsId = activeSpecialWorkspaceId;
+         const wins = root.windowList;
+         for (let i = 0; i < wins.length; i++) {
+-            if (wins[i].monitor === mon.id && wins[i].fullscreen && wins[i].workspace.id === wsId)
++            const w = wins[i];
++            if (w.monitor !== mon.id || !w.fullscreen)
++                continue;
++            if (w.workspace.id === wsId || (specialWsId !== 0 && w.workspace.id === specialWsId))
+                 return true;
+         }
+         return false;

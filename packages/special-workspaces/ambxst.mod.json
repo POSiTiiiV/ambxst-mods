@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "positive.special-workspaces",
   "name": "Special Workspaces",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Isolated special-workspace state and UI: per-button dot/pill indicators, dimmed highlight, blocked navigation while isolated, and dock auto-hide awareness of special-workspace windows. Pairs with positive.workspace-app-indicator for the focused-app badge.",
   "license": "MIT",
   "author": "POSiTiiiV",
