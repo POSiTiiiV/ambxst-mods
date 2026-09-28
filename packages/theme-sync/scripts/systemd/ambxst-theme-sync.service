@@ -1,0 +1,7 @@
+[Unit]
+Description=Synchronize Desktop Theme with Ambxst Wallpaper Palette (Terminal, btop, Starship, Fastfetch, Spotify, Fuzzel)
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/ambxst-theme-sync

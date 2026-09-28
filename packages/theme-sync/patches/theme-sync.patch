@@ -1,0 +1,14 @@
+diff --git a/shell.qml b/shell.qml
+index 888996d3..0490ccc6 100644
+--- a/shell.qml
++++ b/shell.qml
+@@ -309,6 +309,9 @@ ShellRoot {
+         onTriggered: {
+             let _ = NightLightClient.active;
+             _ = GameModeClient.toggled;
++            // Force init (mod settings-changed listener) — guarded since this
++            // singleton only exists when positive.theme-sync is installed.
++            if (typeof ThemeSyncService !== "undefined") _ = ThemeSyncService.modId;
+         }
+     }
+ }

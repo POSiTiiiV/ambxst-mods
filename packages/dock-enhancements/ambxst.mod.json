@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Axenide/Ambxst/dev/docs/mods/manifest.schema.json",
+  "manifestVersion": 1,
+  "id": "positive.dock-enhancements",
+  "name": "Dock Enhancements",
+  "version": "1.0.0",
+  "description": "Keeps the bar/notch/dock visible during regular window maximize (SUPER+F) while still hiding for true exclusive fullscreen, and adds a configurable toggle to control dock visibility for floating windows.",
+  "license": "MIT",
+  "author": "POSiTiiiV",
+  "compatibility": {
+    "api": 1,
+    "ambxst": ">=1.3.0 <2.0.0"
+  },
+  "dependencies": [],
+  "conflicts": [],
+  "commands": [],
+  "permissions": [
+    "Watches an exclusive-fullscreen state file to keep the bar/dock visible during window maximize",
+    "Adjusts dock visibility for floating windows"
+  ],
+  "settings": {
+    "schema": "settings.json"
+  },
+  "operations": [
+    {
+      "type": "overlay",
+      "source": "payload/modules/services/DockEnhanceService.qml",
+      "target": "modules/services/DockEnhanceService.qml"
+    },
+    {
+      "type": "patch",
+      "source": "patches/dock-enhancements.patch"
+    }
+  ]
+}

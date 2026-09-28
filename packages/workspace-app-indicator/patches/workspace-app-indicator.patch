@@ -1,0 +1,241 @@
+--- a/modules/bar/workspaces/Workspaces.qml
++++ b/modules/bar/workspaces/Workspaces.qml
+@@ -237,8 +237,94 @@
+         updateTimer.restart();
+     }
+ 
+-    implicitWidth: orientation === "vertical" ? baseSize : workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2
+-    implicitHeight: orientation === "vertical" ? workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2 : baseSize
++    // Focused-app identity for the currently active workspace, regular or
++    // special. In special-workspace mode this looks at specialWsData.id
++    // (the special workspace itself) instead of effectiveActiveWorkspaceId
++    // (which holds the *saved regular* workspace while isolated).
++    readonly property int focusLookupWorkspaceId: inSpecialWorkspace ? specialWsData.id : effectiveActiveWorkspaceId
++
++    readonly property var activeAppWindow: {
++        // Inside an isolated special workspace, Hyprland guarantees the
++        // globally active toplevel is the one focused there. Prefer it:
++        // Quickshell's native toplevel tracking (activeWindow) updates
++        // immediately on every focus change, whereas axctl's focusHistoryID
++        // snapshot only refreshes on the backend's next full state push,
++        // which can lag behind a pure focus-only change (no window
++        // open/close) until something else forces a re-sync.
++        if (inSpecialWorkspace && activeWindow && activeWindow.appId) {
++            return { class: activeWindow.appId };
++        }
++        const wins = CompositorData.workspaceWindowsMap[focusLookupWorkspaceId] || [];
++        if (wins.length === 0) return null;
++        return wins.reduce(function(best, win) {
++            const bestFocus = (best && best.focusHistoryID !== undefined ? best.focusHistoryID : Infinity);
++            const winFocus = (win && win.focusHistoryID !== undefined ? win.focusHistoryID : Infinity);
++            return winFocus < bestFocus ? win : best;
++        }, null);
++    }
++
++    readonly property var activeAppDesktopEntry: activeAppWindow ? DesktopEntries.heuristicLookup(activeAppWindow.class) : null
++
++    readonly property string activeAppName: {
++        if (activeAppWindow) {
++            if (activeAppDesktopEntry && activeAppDesktopEntry.name) return activeAppDesktopEntry.name;
++            if (activeAppWindow.class) return activeAppWindow.class.charAt(0).toUpperCase() + activeAppWindow.class.slice(1);
++        }
++        // No window focused yet in an empty special workspace — fall back to
++        // a name derived from the workspace itself (e.g. "Music", "Discord").
++        if (inSpecialWorkspace) {
++            var wsName = (specialWsData && specialWsData.name) ? specialWsData.name : "";
++            wsName = wsName.replace(/^special:?/, "").trim();
++            if (!wsName || wsName === "special") return "Music";
++            return wsName.charAt(0).toUpperCase() + wsName.slice(1);
++        }
++        return "";
++    }
++
++    readonly property string activeAppIconSource: {
++        if (activeAppDesktopEntry && activeAppDesktopEntry.icon) {
++            return Quickshell.iconPath(activeAppDesktopEntry.icon, "image-missing");
++        }
++        if (activeAppWindow) {
++            return Quickshell.iconPath(AppSearch.getCachedIcon(activeAppWindow.class), "image-missing");
++        }
++        if (inSpecialWorkspace) {
++            var wsName = (specialWsData && specialWsData.name) ? specialWsData.name.toLowerCase() : "";
++            wsName = wsName.replace(/^special:?/, "").trim();
++            if (wsName.includes("discord")) return Quickshell.iconPath("discord", "chat");
++            if (!wsName || wsName === "special" || wsName.includes("music") || wsName.includes("audio"))
++                return Quickshell.iconPath("audio-player", "multimedia-audio-player");
++            return Quickshell.iconPath("starred", "favorite");
++        }
++        return Quickshell.iconPath("image-missing", "image-missing");
++    }
++
++    // Small gap between the workspace row and the badge, so the badge's own
++    // background chip doesn't visually fuse with the last workspace button.
++    readonly property real activeAppBadgeGap: 6
++
++    // Additive, like the workspace row's own width — never touches the
++    // workspace button's own size, so the number pill stays stable.
++    readonly property real activeAppBadgeWidth: (orientation === "horizontal" && activeAppName !== "") ? (activeAppBadge.implicitWidth + activeAppBadgeGap) : 0
++    readonly property real activeAppBadgeHeight: (orientation === "vertical" && activeAppName !== "") ? (activeAppBadge.implicitHeight + activeAppBadgeGap) : 0
++
++    implicitWidth: orientation === "vertical" ? baseSize : workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2 + activeAppBadgeWidth
++    implicitHeight: orientation === "vertical" ? workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2 + activeAppBadgeHeight : baseSize
++
++    Behavior on implicitWidth {
++        enabled: Config.animDuration > 0
++        NumberAnimation {
++            duration: 200
++            easing.type: Easing.OutQuad
++        }
++    }
++    Behavior on implicitHeight {
++        enabled: Config.animDuration > 0
++        NumberAnimation {
++            duration: 200
++            easing.type: Easing.OutQuad
++        }
++    }
+ 
+     readonly property bool effectiveContainBar: Config.bar.containBar && ((Config.bar.frameEnabled !== undefined ? Config.bar.frameEnabled : false))
+ 
+@@ -513,8 +599,11 @@
+         z: 3
+ 
+         spacing: 0
+-        anchors.fill: parent
++        anchors.left: parent.left
++        anchors.top: parent.top
++        anchors.bottom: parent.bottom
+         anchors.margins: widgetPadding
++        width: workspaceButtonWidth * effectiveWorkspaceCount
+         implicitHeight: workspaceButtonWidth
+ 
+         Repeater {
+@@ -524,6 +613,7 @@
+                 id: button
+                 property int workspaceValue: getWorkspaceId(index)
+                 Layout.fillHeight: true
++                Layout.preferredWidth: workspaceButtonWidth
+                 onPressed: {
+                     if (inSpecialWorkspace) return;
+                     AxctlService.dispatch(`workspace ${workspaceValue}`);
+@@ -704,8 +794,11 @@
+         z: 3
+ 
+         spacing: 0
+-        anchors.fill: parent
++        anchors.left: parent.left
++        anchors.top: parent.top
++        anchors.right: parent.right
+         anchors.margins: widgetPadding
++        height: workspaceButtonWidth * effectiveWorkspaceCount
+         implicitWidth: workspaceButtonWidth
+ 
+         Repeater {
+@@ -715,6 +808,7 @@
+                 id: buttonVert
+                 property int workspaceValue: getWorkspaceId(index)
+                 Layout.fillWidth: true
++                Layout.preferredHeight: workspaceButtonWidth
+                 onPressed: {
+                     if (inSpecialWorkspace) return;
+                     AxctlService.dispatch(`workspace ${workspaceValue}`);
+@@ -888,4 +982,99 @@
+             }
+         }
+     }
++
++    // Focused-app badge: a separate element beside the workspace buttons,
++    // shown for the active workspace whether it's regular or special. Never
++    // merged into the workspace number pill itself.
++    Item {
++        id: activeAppBadge
++        visible: opacity > 0
++        opacity: activeAppName !== "" ? 1.0 : 0.0
++        z: 4
++
++        // Position immediately following the workspace buttons, with a small
++        // gap so the chip's own background doesn't fuse with the last button.
++        x: orientation === "horizontal" ? (widgetPadding + workspaceButtonWidth * effectiveWorkspaceCount + activeAppBadgeGap) : widgetPadding
++        y: orientation === "vertical" ? (widgetPadding + workspaceButtonWidth * effectiveWorkspaceCount + activeAppBadgeGap) : widgetPadding
++
++        readonly property real badgeContentWidth: appBadgeRow.implicitWidth + 16
++        readonly property real badgeContentHeight: appBadgeCol.implicitHeight + 16
++
++        implicitWidth: orientation === "horizontal" ? badgeContentWidth : workspaceButtonWidth
++        implicitHeight: orientation === "vertical" ? badgeContentHeight : workspaceButtonWidth
++
++        width: implicitWidth
++        height: implicitHeight
++
++        Behavior on opacity {
++            enabled: Config.animDuration > 0
++            NumberAnimation {
++                duration: 180
++                easing.type: Easing.OutQuad
++            }
++        }
++
++        // Subtle background chip — makes the badge read as a distinct group
++        // without a hard edge. "internalbg" resolves to the same "background"
++        // token as the bar's own fill (invisible on top of it); "common"
++        // uses the "surface" token instead, giving real contrast while still
++        // being a standard, theme-synced shell surface.
++        StyledRect {
++            id: appBadgeBg
++            variant: "common"
++            anchors.fill: parent
++            radius: workspacesWidget.radius > 0 ? Math.max(workspacesWidget.radius - widgetPadding, 0) : 0
++        }
++
++        // Horizontal layout: icon + label
++        RowLayout {
++            id: appBadgeRow
++            visible: orientation === "horizontal"
++            anchors.centerIn: parent
++            spacing: 2
++
++            IconImage {
++                id: appBadgeIconH
++                implicitSize: 16
++                Layout.alignment: Qt.AlignVCenter
++                source: activeAppIconSource
++            }
++
++            Tinted {
++                sourceItem: appBadgeIconH
++                anchors.fill: appBadgeIconH
++            }
++
++            Text {
++                id: appBadgeLabelH
++                Layout.alignment: Qt.AlignVCenter
++                font.family: Config.theme.font
++                font.pixelSize: Math.max(10, Config.theme.fontSize - 1)
++                font.weight: Font.DemiBold
++                color: Colors.overBackground
++                text: activeAppName
++                elide: Text.ElideRight
++            }
++        }
++
++        // Vertical layout: icon only
++        ColumnLayout {
++            id: appBadgeCol
++            visible: orientation === "vertical"
++            anchors.centerIn: parent
++            spacing: 0
++
++            IconImage {
++                id: appBadgeIconV
++                implicitSize: 16
++                Layout.alignment: Qt.AlignHCenter
++                source: activeAppIconSource
++            }
++
++            Tinted {
++                sourceItem: appBadgeIconV
++                anchors.fill: appBadgeIconV
++            }
++        }
++    }
+ }

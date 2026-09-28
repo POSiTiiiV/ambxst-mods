@@ -2,134 +2,35 @@
 
 A curated collection of declarative modifications, performance optimizations, and shell enhancements for the [Ambxst Desktop Environment](https://github.com/Axenide/Ambxst), powered by Ambxst's native mod manager.
 
+Each package has its own README with full details, screenshots, and install instructions — this file just lists what's here.
+
 ---
 
 ## Available Packages
 
-| Package | Name | Version | Ambxst | Description | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| [`wallpaper-transitions`](packages/wallpaper-transitions) | **Wallpaper Transitions** | `v1.4.0` | `>=1.3.0` | Animated transitions (10 styles, 6 easing curves), GIF/video support with smart fullscreen pausing, random shuffle, custom rotation timer, solar time-of-day sync, and keyboard navigation. | Active (`v1.4.0`) |
-
----
-
-## Featured Mod: Wallpaper Transitions (`v1.4.0`)
-
-> Full documentation and IPC reference available in [`packages/wallpaper-transitions/README.md`](packages/wallpaper-transitions/README.md).
-
-### Features
-* **10 Transition Styles**: Crossfade, Circle Expand (Iris Out), Circle Shrink (Iris In), Slide (Left, Right, Up, Down), Zoom & Fade, Ambxst Pulse, and Instant Swap.
-* **6 Easing Curves & Speeds**: Cubic, Ease In-Out, Exponential, Elastic Back, Quadratic, and Linear with duration presets from Fast (200ms) to Cinematic (1200ms) and marquee text descriptions.
-* **Smooth & Stutter-Free**: Fluid animations with zero black frames, decoder stalls, or compositor pauses.
-* **Full Media Support**: Seamless transitions across static images, animated GIFs, and live videos (`.mp4`, `.webm`, `.mov`, `.mkv`).
-* **Intelligent Playback Pausing (VRAM & GPU Diet)**: Automatically pauses live video and GIF wallpapers when apps enter fullscreen or cover the screen, with configurable scope (current monitor vs all monitors).
-* **Randomization & Automation**:
-  * **Top-Bar Shuffle**: Change to a random wallpaper with a single click in the wallpaper picker.
-  * **Custom Directory & Category Pools**: Choose which categories (Images, GIFs, Videos) or specific subfolders your random and periodic wallpapers are picked from.
-  * **Fair Shuffle Deck**: Ensures every wallpaper in your active pool plays before repeating.
-  * **Precision Custom Timer**: Set rotation intervals with standard presets (`30s` to `2h`) or use tactile **Hours**, **Minutes**, and **Seconds** steppers with direct keyboard typing and 1s precision.
-  * **Match Time of Day (Solar Sync)**: Independent toggle switch matching random wallpapers to the current solar phase (Morning, Afternoon, Sunset, Night) via fast thumbnail color indexing.
-  * **Compositor Shortcut Support**: Can be bound to any shortcut in your compositor configuration via `ambxst run wallpaper-random`.
-* **Full Keyboard Navigation**:
-  * Arrow keys navigate settings and wallpaper grid cleanly.
-  * <kbd>Tab</kbd> / <kbd>Shift + Tab</kbd> jumps between section headers.
-  * <kbd>Space</kbd> / <kbd>Enter</kbd> toggles options.
-  * <kbd>Esc</kbd> returns directly to wallpaper search.
-* **Fast & Responsive Browsing**:
-  * On-demand settings loading keeps the wallpaper picker fast to open.
-  * Smooth scrolling with optimized virtualization and caching.
+| Package | Name | Version | Description |
+| :--- | :--- | :--- | :--- |
+| [`wallpaper-transitions`](packages/wallpaper-transitions) | Wallpaper Transitions | `v1.4.0` | Animated wallpaper transitions (10 styles, 6 easing curves), GIF/video support with smart fullscreen pausing, random shuffle, custom rotation timer, solar time-of-day sync. |
+| [`dock-enhancements`](packages/dock-enhancements) | Dock Enhancements | `v1.0.0` | Keeps the bar/dock visible during regular window maximize (only true exclusive fullscreen hides it), plus a toggle for whether floating windows hide the dock. |
+| [`special-workspaces`](packages/special-workspaces) | Special Workspaces | `v1.0.0` | Isolated special-workspace state, dimmed highlight, per-button dot/pill indicator, and dock auto-hide awareness for isolated workspaces (e.g. a dedicated Discord or Music workspace). Depends on `dock-enhancements`. |
+| [`workspace-app-indicator`](packages/workspace-app-indicator) | Workspace App Indicator | `v1.0.0` | Shows the focused app's icon + name in a separate badge beside the workspace row — works for both regular and special workspaces. Depends on `special-workspaces`. |
+| [`theme-sync`](packages/theme-sync) | Theme Sync | `v1.0.0` | Live-syncs the wallpaper's Material You palette to Kitty, btop, Starship, Fastfetch, Spicetify, Fuzzel, Sonora and Dolphin, with per-app toggles and configurable Dolphin opacity/blur. Needs one companion script — see its README. |
 
 ---
 
 ## Quick Install
 
-### Install via Ambxst CLI
+Every package installs the same way — swap the URL for the one you want:
 
 ```bash
-# Install Wallpaper Transitions directly from this repository:
-ambxst mods install https://github.com/POSiTiiiV/ambxst-mods/tree/main/packages/wallpaper-transitions
-
-# Enable and reload:
-ambxst mods enable positive.wallpaper-transitions
+ambxst mods install https://github.com/POSiTiiiV/ambxst-mods/tree/main/packages/<package-name>
+ambxst mods enable positive.<package-id>
 ambxst reload
 ```
 
-### Install via Ambxst GUI
+Or via the GUI: **Ambxst Settings → Mods → Package source**, paste the package URL, click **Install**, then enable it in the list.
 
-1. Open **Ambxst Settings** (`SUPER + S` or via Dashboard).
-2. Navigate to **Mods** in the left sidebar.
-3. Paste the package URL into the **Package source** field:
-   ```text
-   https://github.com/POSiTiiiV/ambxst-mods/tree/main/packages/wallpaper-transitions
-   ```
-4. Click **Install**, then select **Wallpaper Transitions** in the list and click **Enable**.
-
-### Local Clone & Development
-
-```bash
-git clone https://github.com/POSiTiiiV/ambxst-mods.git
-ambxst mods install ./ambxst-mods/packages/wallpaper-transitions
-ambxst mods enable positive.wallpaper-transitions
-ambxst reload
-```
-
----
-
-## Keybinding Setup (Optional)
-
-To trigger a random wallpaper transition with a keyboard shortcut, bind `ambxst run wallpaper-random` in your compositor configuration:
-
-### Hyprland (Lua Config — `~/.config/hypr/lua/custom/custom_binds.lua`)
-```lua
-hl.bind("SUPER + SHIFT + W", hl.dsp.exec_cmd("ambxst run wallpaper-random"))
-```
-
-### Hyprland (Standard Config — `~/.config/hypr/hyprland.conf`)
-```ini
-bind = SUPER SHIFT, W, exec, ambxst run wallpaper-random
-```
-
-### Niri (`~/.config/niri/config.kdl`)
-```kdl
-Mod+Shift+W { spawn "ambxst" "run" "wallpaper-random"; }
-```
-
----
-
-## CLI & IPC API Reference
-
-Automate actions directly from terminal scripts, status bars, or keybindings:
-
-```bash
-# Open wallpaper picker (always returns to the wallpaper grid)
-ambxst run wallpapers
-
-# Shuffle to a random wallpaper
-ambxst run wallpaper-random
-
-# Set transition style via IPC
-ambxst ipc call GlobalStates.setWallpaperTransitionStyle '["circleOut"]'
-
-# Set transition duration in milliseconds
-ambxst ipc call GlobalStates.setWallpaperTransitionDuration '[400]'
-
-# Toggle automated periodic background rotation
-ambxst ipc call GlobalStates.setWallpaperPeriodicEnabled '[true]'
-
-# Set rotation interval in seconds (e.g. 900 for 15 minutes, 30 for 30s)
-ambxst ipc call GlobalStates.setWallpaperPeriodicSeconds '[900]'
-
-# Toggle Match Time of Day (Solar Sync)
-ambxst ipc call GlobalStates.setWallpaperSolarSyncEnabled '[true]'
-
-# Set live video/GIF pause mode ("fullscreen", "maximized", or "never")
-ambxst ipc call GlobalStates.setWallpaperPauseMode '["fullscreen"]'
-
-# Set live video/GIF pause scope ("perScreen" or "allScreens")
-ambxst ipc call GlobalStates.setWallpaperPauseScope '["perScreen"]'
-
-# Filter random and periodic pool by categories or subfolders (empty array = all wallpapers)
-ambxst ipc call GlobalStates.setWallpaperRandomSourceFilters '["video", "subfolder_nature"]'
-```
+Packages with dependencies (`special-workspaces`, `workspace-app-indicator`) will ask Ambxst to also install those — see each package's own README for the exact chain and any extra manual steps (Hyprland config snippets, companion scripts) they need.
 
 ---
 
@@ -142,15 +43,17 @@ ambxst-mods/
 ├── README.md
 ├── LICENSE
 └── packages/
-    └── wallpaper-transitions/
+    ├── wallpaper-transitions/
+    ├── dock-enhancements/
+    ├── special-workspaces/
+    ├── workspace-app-indicator/
+    └── theme-sync/
         ├── ambxst.mod.json
         ├── README.md
         ├── LICENSE
-        ├── payload/
-        │   ├── TransitionWallpaper.qml
-        │   └── WallpaperSettingsView.qml
-        └── patches/
-            └── wallpaper-transitions.patch
+        ├── payload/            (QML source patched/overlaid into Ambxst)
+        ├── patches/
+        └── scripts/            (companion pieces outside Ambxst's mod system, if any)
 ```
 
 ---

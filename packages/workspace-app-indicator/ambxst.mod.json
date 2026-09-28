@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Axenide/Ambxst/dev/docs/mods/manifest.schema.json",
+  "manifestVersion": 1,
+  "id": "positive.workspace-app-indicator",
+  "name": "Workspace App Indicator",
+  "version": "1.0.0",
+  "description": "Shows the focused app's icon and name in a separate badge next to the workspace row, without altering the workspace number pill itself. Updates live for both regular and isolated special workspaces. Requires positive.special-workspaces.",
+  "license": "MIT",
+  "author": "POSiTiiiV",
+  "compatibility": {
+    "api": 1,
+    "ambxst": ">=1.3.0 <2.0.0"
+  },
+  "dependencies": ["positive.special-workspaces"],
+  "conflicts": [],
+  "commands": [],
+  "permissions": [
+    "Reads the active (regular or special) workspace's window list to display focused app name and icon in the workspace indicator"
+  ],
+  "operations": [
+    {
+      "type": "patch",
+      "source": "patches/workspace-app-indicator.patch"
+    }
+  ]
+}

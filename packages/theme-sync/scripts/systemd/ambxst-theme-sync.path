@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch Ambxst wallpaper color changes for desktop theme sync
+StartLimitIntervalSec=0
+
+[Path]
+PathChanged=%h/.cache/ambxst/colors.json
+Unit=ambxst-theme-sync.service
+
+[Install]
+WantedBy=default.target

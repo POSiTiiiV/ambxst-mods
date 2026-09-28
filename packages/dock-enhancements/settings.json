@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Axenide/Ambxst/dev/docs/mods/settings.schema.json",
+  "version": 1,
+  "fields": [
+    {
+      "key": "hideForFloating",
+      "label": "Hide dock for floating windows",
+      "description": "Hide the dock when floating windows are present. If disabled, floating windows will not cause the dock to hide.",
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}

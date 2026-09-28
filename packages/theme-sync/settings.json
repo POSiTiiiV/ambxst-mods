@@ -1,0 +1,83 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Axenide/Ambxst/dev/docs/mods/settings.schema.json",
+  "version": 1,
+  "fields": [
+    {
+      "key": "syncKitty",
+      "label": "Sync Kitty",
+      "description": "Apply the wallpaper's Material You palette to Kitty's colors, live, with no restart.",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "syncBtop",
+      "label": "Sync btop",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "syncStarship",
+      "label": "Sync Starship prompt",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "syncFastfetch",
+      "label": "Sync Fastfetch",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "syncSpicetify",
+      "label": "Sync Spotify (Spicetify)",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "syncFuzzel",
+      "label": "Sync Fuzzel launcher",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "syncSonora",
+      "label": "Sync Sonora",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "syncDolphin",
+      "label": "Sync Dolphin colors",
+      "description": "Apply the generated Material You color scheme to Dolphin/KDE apps. Turn off to leave Dolphin's own theme untouched (opacity/blur below still apply either way).",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "dolphinIconTheme",
+      "label": "Dolphin icon theme",
+      "type": "enum",
+      "default": "breeze-dark",
+      "options": [
+        { "label": "Breeze Dark", "value": "breeze-dark" },
+        { "label": "Breeze", "value": "breeze" },
+        { "label": "Breeze Light", "value": "breeze-light" }
+      ]
+    },
+    {
+      "key": "dolphinOpacity",
+      "label": "Dolphin window opacity",
+      "description": "Active-window opacity for Dolphin, 40-100%. Lower = more see-through. Inactive opacity trails 6 points below.",
+      "type": "integer",
+      "default": 89,
+      "minimum": 40,
+      "maximum": 100
+    },
+    {
+      "key": "dolphinBlur",
+      "label": "Blur behind Dolphin",
+      "description": "Kawase blur behind Dolphin's transparent background (uses the compositor's existing blur settings).",
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}

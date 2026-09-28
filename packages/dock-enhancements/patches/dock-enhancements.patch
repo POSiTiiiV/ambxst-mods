@@ -1,0 +1,110 @@
+diff --git a/modules/bar/workspaces/CompositorData.qml b/modules/bar/workspaces/CompositorData.qml
+index 8fa16e5b..cdd04bf9 100644
+--- a/modules/bar/workspaces/CompositorData.qml
++++ b/modules/bar/workspaces/CompositorData.qml
+@@ -20,10 +20,26 @@ Singleton {
+         // No-op: state is now pushed inline via axctl subscribe events
+     }
+ 
+-    // Monitor-scoped fullscreen check. Only windows on the given monitor's
+-    // active workspace count, so fullscreen state never propagates to
+-    // other screens.
++    // FileView watcher for exclusive fullscreen (F11 / SUPER+SHIFT+F)
++    FileView {
++        id: exclusiveFullscreenView
++        path: "/tmp/ambxst_exclusive_fullscreen.txt"
++        preload: true
++        watchChanges: true
++        onFileChanged: reload()
++    }
++
++    readonly property bool isExclusiveFullscreen: {
++        const txt = (exclusiveFullscreenView.text() || "").trim();
++        return txt === "1";
++    }
++
++    // Monitor-scoped fullscreen check. Only windows in true exclusive fullscreen
++    // (F11 / SUPER+SHIFT+F) count as fullscreen, so that regular window maximize
++    // (SUPER+F) keeps the bar, notch, and curved screen corners visible.
+     function monitorHasFullscreen(mon) {
++        if (!isExclusiveFullscreen)
++            return false;
+         if (!mon || !mon.activeWorkspace)
+             return false;
+         const wsId = mon.activeWorkspace.id;
+diff --git a/modules/dock/DockContent.qml b/modules/dock/DockContent.qml
+index 80536938..502f3b17 100644
+--- a/modules/dock/DockContent.qml
++++ b/modules/dock/DockContent.qml
+@@ -11,6 +11,7 @@ import qs.modules.services
+ import qs.modules.components
+ import qs.modules.corners
+ import qs.modules.globals
++import qs.modules.bar.workspaces
+ import qs.config
+ 
+ Item {
+@@ -83,21 +84,16 @@ Item {
+     readonly property var compositorMonitor: AxctlService.monitorFor(screen)
+     readonly property var toplevels: (!compositorMonitor || !compositorMonitor.activeWorkspace || !AxctlService.clients.values) ? [] : AxctlService.clients.values.filter(c => c.workspace.id === compositorMonitor.activeWorkspace.id)
+ 
++    readonly property bool hideForFloating: (typeof DockEnhanceService !== "undefined" && DockEnhanceService.hideForFloating !== undefined) ? DockEnhanceService.hideForFloating : (Config.dock?.hideForFloating ?? true)
++
++    readonly property var effectiveWindows: hideForFloating ? toplevels : toplevels.filter(c => !c.floating)
++
+     // Check if there are any windows on the current monitor and workspace
+-    readonly property bool hasWindows: toplevels.length > 0
++    readonly property bool hasWindows: effectiveWindows.length > 0
+ 
+     // Fullscreen detection - scoped to this monitor so the effect only
+     // applies to the screen that actually has the fullscreen window
+-    readonly property bool activeWindowFullscreen: {
+-        if (!compositorMonitor || !toplevels) return false;
+-
+-        for (var i = 0; i < toplevels.length; i++) {
+-            if (toplevels[i].fullscreen == true && toplevels[i].monitor === compositorMonitor.id) {
+-               return true;
+-            }
+-        }
+-        return false;
+-    }
++    readonly property bool activeWindowFullscreen: CompositorData.monitorHasFullscreen(compositorMonitor)
+ 
+     // Reveal logic
+     property bool reveal: {
+diff --git a/modules/frame/ScreenFrame.qml b/modules/frame/ScreenFrame.qml
+index 3d000c94..07ce0327 100644
+--- a/modules/frame/ScreenFrame.qml
++++ b/modules/frame/ScreenFrame.qml
+@@ -165,6 +165,7 @@ Item {
+             id: frameContent
+             anchors.fill: parent
+             targetScreen: root.targetScreen
++            hasFullscreenWindow: root.hasFullscreenWindow
+         }
+     }
+ }
+diff --git a/modules/widgets/dashboard/controls/ShellPanel.qml b/modules/widgets/dashboard/controls/ShellPanel.qml
+index 9723b55d..b1142138 100644
+--- a/modules/widgets/dashboard/controls/ShellPanel.qml
++++ b/modules/widgets/dashboard/controls/ShellPanel.qml
+@@ -1555,6 +1555,19 @@ Item {
+                             }
+                         }
+ 
++                        ToggleRow {
++                            label: "Hide dock for floating windows"
++                            visible: (Config.dock.theme ?? "default") !== "integrated"
++                            checked: (typeof DockEnhanceService !== "undefined" && DockEnhanceService.hideForFloating !== undefined) ? DockEnhanceService.hideForFloating : (Config.dock.hideForFloating ?? true)
++                            onToggled: value => {
++                                if (typeof DockEnhanceService !== "undefined" && typeof ModsService !== "undefined" && typeof ModsService.setSetting === "function") {
++                                    ModsService.setSetting("positive.dock-enhancements", "hideForFloating", value);
++                                }
++                                GlobalStates.markShellChanged();
++                                Config.dock.hideForFloating = value;
++                            }
++                        }
++
+                         ToggleRow {
+                             label: I18n.t("shell.show_running_indicators")
+                             visible: (Config.dock.theme ?? "default") !== "integrated"
