@@ -1,3 +1,5 @@
+diff --git a/modules/bar/workspaces/Workspaces.qml b/modules/bar/workspaces/Workspaces.qml
+index 80721c20..0ff87e72 100644
 --- a/modules/bar/workspaces/Workspaces.qml
 +++ b/modules/bar/workspaces/Workspaces.qml
 @@ -237,8 +237,94 @@

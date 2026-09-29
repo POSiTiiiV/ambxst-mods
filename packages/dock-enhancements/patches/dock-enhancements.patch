@@ -32,6 +32,8 @@ index 8fa16e5b..cdd04bf9 100644
          if (!mon || !mon.activeWorkspace)
              return false;
          const wsId = mon.activeWorkspace.id;
+diff --git a/modules/dock/DockContent.qml b/modules/dock/DockContent.qml
+index ea44def6..38a666b1 100644
 --- a/modules/dock/DockContent.qml
 +++ b/modules/dock/DockContent.qml
 @@ -11,6 +11,7 @@
