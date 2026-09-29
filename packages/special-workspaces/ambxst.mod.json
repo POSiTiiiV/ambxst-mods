@@ -3,21 +3,20 @@
   "manifestVersion": 1,
   "id": "positive.special-workspaces",
   "name": "Special Workspaces",
-  "version": "1.0.1",
-  "description": "Isolated special-workspace state and UI: per-button dot/pill indicators, dimmed highlight, blocked navigation while isolated, and dock auto-hide awareness of special-workspace windows. Pairs with positive.workspace-app-indicator for the focused-app badge.",
+  "version": "2.0.0",
+  "description": "Requires drpezzer.roadie for full effect. Isolated special-workspace state and UI on the workspace bar: per-button dot/pill indicators, dimmed highlight, blocked navigation while isolated. Dock auto-hide/fullscreen awareness of special-workspace windows is now provided by drpezzer.roadie directly. Pairs with positive.workspace-app-indicator for the focused-app badge.",
   "license": "MIT",
   "author": "POSiTiiiV",
   "compatibility": {
     "api": 1,
     "ambxst": ">=1.3.0 <2.0.0"
   },
-  "dependencies": ["positive.dock-enhancements"],
+  "dependencies": ["drpezzer.roadie"],
   "conflicts": [],
   "commands": [],
   "permissions": [
     "Reads /tmp/ambxst_special_ws.txt to track the active isolated special workspace",
-    "Blocks workspace navigation and dims the active-workspace highlight while a special workspace is open",
-    "Includes special-workspace windows when the dock decides whether to auto-hide"
+    "Blocks workspace navigation and dims the active-workspace highlight while a special workspace is open"
   ],
   "operations": [
     {

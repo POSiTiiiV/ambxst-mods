@@ -32,11 +32,9 @@ index 8fa16e5b..cdd04bf9 100644
          if (!mon || !mon.activeWorkspace)
              return false;
          const wsId = mon.activeWorkspace.id;
-diff --git a/modules/dock/DockContent.qml b/modules/dock/DockContent.qml
-index 80536938..502f3b17 100644
 --- a/modules/dock/DockContent.qml
 +++ b/modules/dock/DockContent.qml
-@@ -11,6 +11,7 @@ import qs.modules.services
+@@ -11,6 +11,7 @@
  import qs.modules.components
  import qs.modules.corners
  import qs.modules.globals
@@ -44,20 +42,22 @@ index 80536938..502f3b17 100644
  import qs.config
  
  Item {
-@@ -83,21 +84,16 @@ Item {
+@@ -94,21 +95,24 @@
      readonly property var compositorMonitor: AxctlService.monitorFor(screen)
-     readonly property var toplevels: (!compositorMonitor || !compositorMonitor.activeWorkspace || !AxctlService.clients.values) ? [] : AxctlService.clients.values.filter(c => c.workspace.id === compositorMonitor.activeWorkspace.id)
+     readonly property var toplevels: (!compositorMonitor || !compositorMonitor.activeWorkspace || !AxctlService.clients.values) ? [] : AxctlService.clients.values.filter(c => c.workspace.id === compositorMonitor.activeWorkspace.id || (openSpecialWorkspaceId !== 0 && c.workspace.id === openSpecialWorkspaceId))
  
 +    readonly property bool hideForFloating: (typeof DockEnhanceService !== "undefined" && DockEnhanceService.hideForFloating !== undefined) ? DockEnhanceService.hideForFloating : (Config.dock?.hideForFloating ?? true)
 +
++    // Built on roadie's own toplevels above, so floating-window filtering
++    // still respects special-workspace windows (openSpecialWorkspaceId).
 +    readonly property var effectiveWindows: hideForFloating ? toplevels : toplevels.filter(c => !c.floating)
 +
-     // Check if there are any windows on the current monitor and workspace
+     // Check if there are any windows on this output's visible workspaces
 -    readonly property bool hasWindows: toplevels.length > 0
 +    readonly property bool hasWindows: effectiveWindows.length > 0
  
      // Fullscreen detection - scoped to this monitor so the effect only
-     // applies to the screen that actually has the fullscreen window
+-    // applies to the screen that actually has the fullscreen window
 -    readonly property bool activeWindowFullscreen: {
 -        if (!compositorMonitor || !toplevels) return false;
 -
@@ -68,10 +68,17 @@ index 80536938..502f3b17 100644
 -        }
 -        return false;
 -    }
++    // applies to the screen that actually has the fullscreen window.
++    // Uses CompositorData's exclusive-only check (fullscreen == 2) rather
++    // than roadie's stock boolean toplevels loop below -- that loop treats
++    // a merely-maximized window (fullscreen == 1) as "fullscreen" too, which
++    // would make fullscreenHidden (activeWindowFullscreen || screenFullscreen
++    // further down) true on a plain maximize even though screenFullscreen
++    // itself is exclusive-only, regressing "SUPER+F shouldn't hide the bar".
 +    readonly property bool activeWindowFullscreen: CompositorData.monitorHasFullscreen(compositorMonitor)
  
-     // Reveal logic
-     property bool reveal: {
+     // This screen's own fullscreen state, set by UnifiedShellPanel from its
+     // per-output hasFullscreenWindow, which also reads Hyprland's own window
 diff --git a/modules/frame/ScreenFrame.qml b/modules/frame/ScreenFrame.qml
 index 3d000c94..07ce0327 100644
 --- a/modules/frame/ScreenFrame.qml

@@ -3,15 +3,15 @@
   "manifestVersion": 1,
   "id": "positive.dock-enhancements",
   "name": "Dock Enhancements",
-  "version": "1.0.0",
-  "description": "Keeps the bar/notch/dock visible during regular window maximize (SUPER+F) while still hiding for true exclusive fullscreen, and adds a configurable toggle to control dock visibility for floating windows.",
+  "version": "2.0.0",
+  "description": "Requires drpezzer.roadie. Keeps the bar/notch/dock visible during regular window maximize (SUPER+F) while still hiding for true exclusive fullscreen, and adds a configurable toggle to control dock visibility for floating windows.",
   "license": "MIT",
   "author": "POSiTiiiV",
   "compatibility": {
     "api": 1,
     "ambxst": ">=1.3.0 <2.0.0"
   },
-  "dependencies": [],
+  "dependencies": ["drpezzer.roadie"],
   "conflicts": [],
   "commands": [],
   "permissions": [

@@ -11,8 +11,8 @@ Each package has its own README with full details, screenshots, and install inst
 | Package | Name | Version | Description |
 | :--- | :--- | :--- | :--- |
 | [`wallpaper-transitions`](packages/wallpaper-transitions) | Wallpaper Transitions | `v1.4.0` | Animated wallpaper transitions (10 styles, 6 easing curves), GIF/video support with smart fullscreen pausing, random shuffle, custom rotation timer, solar time-of-day sync. |
-| [`dock-enhancements`](packages/dock-enhancements) | Dock Enhancements | `v1.0.0` | Keeps the bar/dock visible during regular window maximize (only true exclusive fullscreen hides it), plus a toggle for whether floating windows hide the dock. |
-| [`special-workspaces`](packages/special-workspaces) | Special Workspaces | `v1.0.1` | Isolated special-workspace state, dimmed highlight, per-button dot/pill indicator, dock auto-hide awareness, and correct bar-hiding for exclusive fullscreen inside a special workspace. Depends on `dock-enhancements`. |
+| [`dock-enhancements`](packages/dock-enhancements) | Dock Enhancements | `v2.0.0` | Keeps the bar/dock visible during regular window maximize (only true exclusive fullscreen hides it), plus a toggle for whether floating windows hide the dock. **Requires `drpezzer.roadie`.** |
+| [`special-workspaces`](packages/special-workspaces) | Special Workspaces | `v2.0.0` | Isolated special-workspace state on the workspace bar: dimmed highlight, per-button dot/pill indicator, blocked navigation. **Requires `drpezzer.roadie`** for the dock/fullscreen side. |
 | [`workspace-app-indicator`](packages/workspace-app-indicator) | Workspace App Indicator | `v1.0.0` | Shows the focused app's icon + name in a separate badge beside the workspace row — works for both regular and special workspaces. Depends on `special-workspaces`. |
 | [`theme-sync`](packages/theme-sync) | Theme Sync | `v1.0.1` | Live-syncs the wallpaper's Material You palette to Kitty, btop, Starship, Fastfetch, Spicetify, Fuzzel, Sonora and Dolphin — never overwrites anything beyond colors — with per-app toggles and configurable Dolphin opacity/blur. Needs one companion script — see its README. |
 
