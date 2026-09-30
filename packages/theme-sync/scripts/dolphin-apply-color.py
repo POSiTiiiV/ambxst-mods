@@ -336,27 +336,24 @@ def main():
     # Ping-Pong sequential application — MUST be sequential (not &) to avoid
     # concurrent QEvent::ApplicationPaletteChange events crashing Dolphin.
     #
-    # Run the round-trip twice. There's no plasmashell daemon on this Hyprland
-    # session to coordinate the theme-changed broadcast, so the manual
-    # busctl signals below are Dolphin's only notification path — and a
-    # single round-trip sometimes doesn't land (observed: switching to a
-    # different wallpaper and back reliably "fixes" a wallpaper whose first
-    # sync silently didn't visually apply; that's really just a second
-    # round-trip happening for free). Doing it twice here removes the need
-    # for that manual workaround.
-    for _ in range(2):
-        subprocess.run(
-            ["plasma-apply-colorscheme", "DynamicRice2"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        time.sleep(0.08)  # Allow D-Bus queue and KSharedConfig to settle
-        subprocess.run(
-            ["plasma-apply-colorscheme", "DynamicRice"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        time.sleep(0.08)
+    # Single round-trip: DynamicRice2 (pivot) → DynamicRice (target).
+    # A longer settle time (120ms) replaces the old double-loop workaround.
+    # After the busctl signals below (which are Dolphin's real notification
+    # path on Hyprland with no plasmashell), a silent re-apply of DynamicRice
+    # ensures the theme sticks without causing a second visible color flash,
+    # because the scheme file content is identical on the re-apply.
+    subprocess.run(
+        ["plasma-apply-colorscheme", "DynamicRice2"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    time.sleep(0.12)  # Allow D-Bus queue and KSharedConfig to settle
+    subprocess.run(
+        ["plasma-apply-colorscheme", "DynamicRice"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    time.sleep(0.12)
 
     # Broadcast iconChanged(0) BEFORE notifyChange so KIconLoader flushes its
     # rasterized SVG pixmap cache before Qt triggers a repaint.
@@ -377,6 +374,17 @@ def main():
 
     # Notify KConfigWatcher so Darkly reloads Header / ToolBar colors live
     notify_kconfig_changed()
+
+    # Silent re-confirm: re-apply DynamicRice once more after the busctl signals
+    # to guarantee the theme lands when plasma-apply-colorscheme races with the
+    # KConfigWatcher broadcast. No visible flash because both scheme files already
+    # contain the new palette — this is purely a "commit" signal to Qt's palette.
+    time.sleep(0.05)
+    subprocess.run(
+        ["plasma-apply-colorscheme", "DynamicRice"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
     # Force any open Dolphin instances to immediately refresh item views & preview panels
     refresh_dolphin_views()
