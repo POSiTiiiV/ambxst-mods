@@ -49,10 +49,16 @@ Item {
     property bool isMonitorFullscreen: false
     property bool isMonitorCovered: false
 
+    // Confirmed pause state — only flips true after pauseConfirmTimer fires.
+    // Clears immediately when the condition is no longer met.
+    property bool _pauseConfirmed: false
+
     function updateWindowState() {
         if (pauseMode === "never") {
             isMonitorFullscreen = false;
             isMonitorCovered = false;
+            pauseConfirmTimer.stop();
+            _pauseConfirmed = false;
             return;
         }
 
@@ -61,6 +67,8 @@ Item {
         if (isPerScreen && !compositorMonitor) {
             isMonitorFullscreen = false;
             isMonitorCovered = false;
+            pauseConfirmTimer.stop();
+            _pauseConfirmed = false;
             return;
         }
 
@@ -71,17 +79,14 @@ Item {
         let covered = false;
 
         if (isPerScreen) {
-            // 1. Fast path: native Wayland active toplevel is fullscreen on this monitor
-            const toplevel = ToplevelManager.activeToplevel;
-            if (toplevel && toplevel.fullscreen && AxctlService.focusedMonitor && AxctlService.focusedMonitor.id === monId) {
-                fs = true;
-            }
-
-            // 2. Window list scan for this monitor's active workspace
+            // Rely exclusively on Hyprland's CompositorData window list for this monitor.
+            // (ToplevelManager.activeToplevel.fullscreen is unreliable in Hyprland — it fires
+            //  on shell focus changes and layer-shell windows, causing false positives.)
             const wins = CompositorData.windowList || [];
             for (let i = 0; i < wins.length; i++) {
                 const w = wins[i];
-                if (w.monitor === monId && w.workspace && w.workspace.id === activeWorkspaceId && !w.hidden) {
+                // Skip hidden windows and Hyprland special workspaces (id < 0)
+                if (w.monitor === monId && w.workspace && w.workspace.id >= 0 && w.workspace.id === activeWorkspaceId && !w.hidden) {
                     if (w.fullscreen) {
                         fs = true;
                         covered = true;
@@ -99,16 +104,12 @@ Item {
                 }
             }
         } else {
-            // Global scope ("allScreens"): pause if ANY monitor has fullscreen/covered window
-            const toplevel = ToplevelManager.activeToplevel;
-            if (toplevel && toplevel.fullscreen) {
-                fs = true;
-            }
-
+            // Global scope ("allScreens"): pause if ANY normal workspace has a fullscreen/covered window.
+            // Skip Hyprland special workspaces (id < 0) to avoid false positives from shell overlays.
             const wins = CompositorData.windowList || [];
             for (let i = 0; i < wins.length; i++) {
                 const w = wins[i];
-                if (!w.hidden) {
+                if (!w.hidden && w.workspace && w.workspace.id >= 0) {
                     if (w.fullscreen) {
                         fs = true;
                         covered = true;
@@ -125,12 +126,40 @@ Item {
         isMonitorCovered = covered;
     }
 
-    readonly property bool shouldPauseLiveWallpaper: {
-        if (isTransitioning || pendingSource !== "") return false;
+    // Raw computed pause intent — true when window state says we should pause.
+    readonly property bool _pauseIntent: {
         if (pauseMode === "never") return false;
         if (pauseMode === "covered") return isMonitorFullscreen || isMonitorCovered;
-        // Default: "fullscreen"
-        return isMonitorFullscreen;
+        return isMonitorFullscreen; // "fullscreen" (default)
+    }
+
+    // Delayed-confirm timer: only pause after state has been stable for 800ms.
+    // This absorbs transient fullscreen signals from window manager events,
+    // workspace switches, and Ambxst shell layer-shell focus changes.
+    Timer {
+        id: pauseConfirmTimer
+        interval: 800
+        repeat: false
+        onTriggered: {
+            if (root._pauseIntent) root._pauseConfirmed = true;
+        }
+    }
+
+    // React to intent changes: arm confirm timer when we want to pause,
+    // but clear immediately when the condition lifts so resume is instant.
+    // (Property _pauseIntent emits signal _pauseIntentChanged → handler on_PauseIntentChanged)
+    on_PauseIntentChanged: {
+        if (_pauseIntent) {
+            if (!pauseConfirmTimer.running) pauseConfirmTimer.restart();
+        } else {
+            pauseConfirmTimer.stop();
+            _pauseConfirmed = false;
+        }
+    }
+
+    readonly property bool shouldPauseLiveWallpaper: {
+        if (isTransitioning || pendingSource !== "") return false;
+        return _pauseConfirmed;
     }
 
     Timer {
@@ -157,13 +186,8 @@ Item {
         function onFocusedWorkspaceChanged() { windowStateDebounce.restart(); }
     }
 
-    Connections {
-        target: ToplevelManager
-        function onActiveToplevelChanged() { windowStateDebounce.restart(); }
-    }
-
-    onPauseModeChanged: updateWindowState()
-    onPauseScopeChanged: updateWindowState()
+    onPauseModeChanged: { pauseConfirmTimer.stop(); _pauseConfirmed = false; updateWindowState(); }
+    onPauseScopeChanged: { pauseConfirmTimer.stop(); _pauseConfirmed = false; updateWindowState(); }
     Component.onCompleted: updateWindowState()
 
     clip: true
