@@ -31,6 +31,8 @@ Ambxst mods can only patch Ambxst's own QML source — they can't touch your Hyp
 
 **1. The navigation script** — [`special-workspace-nav.sh`](special-workspace-nav.sh) in this mod's repo. Copy it to `~/.config/hypr/scripts/special-workspace-nav.sh` and `chmod +x` it. It implements slot switching (`toggle`/`next`/`prev`/`goto N`) via `hyprctl`, shared by both the Hyprland keybinds below and the bar's own scroll/click handlers (which call it through `Quickshell.execDetached`). Needs `jq`.
 
+   If your Hyprland build uses a Lua config parser (like this one), plain `hyprctl dispatch workspace 1`-style CLI calls don't work — dispatches have to be given as a Lua expression instead, e.g. `hyprctl dispatch 'hl.dsp.focus({workspace="1"})'`. The script already does this; if you're adapting it for a different Hyprland build, check whether yours needs the same.
+
 **2. `~/.config/hypr/lua/custom/custom_binds.lua`** — the toggle keybind (default `SUPER+SHIFT+V`, configurable from Settings), `SUPER+Z/X` slot-cycling redirection while inside the group, and `SUPER+ALT+V` to move the active window into/out of slot 1. Full working version: see [`hyprland-special-workspaces.lua`](hyprland-special-workspaces.lua) in this mod's repo — copy its contents into your `custom_binds.lua`.
 
 **3. `~/.config/hypr/lua/custom/custom_rules.lua`** — window rules that auto-assign an app to a slot the moment it launches, e.g.:

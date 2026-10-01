@@ -199,7 +199,7 @@ end
 -- handlers call, so there's a single source of truth for slot-cycling.
 local function ws_nav_or_special(target, special_direction)
     if hl.get_active_special_workspace() then
-        hl.dispatch(hl.dsp.exec_cmd("bash " .. SPECIAL_NAV_SCRIPT .. " " .. special_direction))
+        os.execute("bash " .. SPECIAL_NAV_SCRIPT .. " " .. special_direction .. " &")
         return
     end
     hl.dispatch(hl.dsp.focus({ workspace = target }))

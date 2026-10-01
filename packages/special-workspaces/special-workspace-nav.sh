@@ -49,6 +49,17 @@ saved_regular_ws() {
     fi
 }
 
+# This Hyprland build uses a Lua config parser: `hyprctl dispatch <name> <args>`
+# doesn't work (it's not the stock dispatcher CLI), dispatches must instead be
+# given as a Lua expression, e.g. `hyprctl dispatch 'hl.dsp.focus({workspace="1"})'`.
+dispatch_focus() {
+    hyprctl dispatch "hl.dsp.focus({workspace=\"$1\"})" >/dev/null
+}
+
+dispatch_toggle_special() {
+    hyprctl dispatch "hl.dsp.workspace.toggle_special(\"$1\")" >/dev/null
+}
+
 # Close whichever special slot is open (if any, and different from $1), then
 # open $1. Hyprland's togglespecialworkspace can't jump directly from one
 # named special workspace to another -- it must be closed first.
@@ -57,10 +68,10 @@ open_slot() {
     local cur
     cur=$(current_slot)
     if [[ "$cur" != "0" && "$cur" != "$target" ]]; then
-        hyprctl dispatch togglespecialworkspace "$cur" >/dev/null
+        dispatch_toggle_special "$cur"
     fi
     if [[ "$cur" != "$target" ]]; then
-        hyprctl dispatch togglespecialworkspace "$target" >/dev/null
+        dispatch_toggle_special "$target"
     fi
 }
 
@@ -70,12 +81,12 @@ case "$cmd" in
     toggle)
         cur=$(current_slot)
         if [[ "$cur" == "0" ]]; then
-            hyprctl dispatch workspace "name:isolated" >/dev/null
+            dispatch_focus "name:isolated"
             open_slot "1"
         else
-            hyprctl dispatch togglespecialworkspace "$cur" >/dev/null
+            dispatch_toggle_special "$cur"
             target=$(saved_regular_ws)
-            hyprctl dispatch workspace "$target" >/dev/null
+            dispatch_focus "$target"
         fi
         ;;
 
