@@ -179,8 +179,8 @@ hl.on("workspace.active", function(ws)
     -- intentionally when closing the special group in toggle_special_group.
 end)
 
--- SUPER+1-10 and e+1/e-1 (move-to-empty-workspace) stay blocked while inside
--- the special group -- only the toggle keybind escapes back to regular.
+-- e+1/e-1 (move-to-empty-workspace) stays blocked while inside the special
+-- group -- only the toggle keybind escapes back to regular.
 local function safe_ws_focus(target)
     if hl.get_active_special_workspace() then
         return
@@ -188,10 +188,20 @@ local function safe_ws_focus(target)
     hl.dispatch(hl.dsp.focus({ workspace = target }))
 end
 
+-- SUPER+1-10 jumps directly to slot N while inside the special group,
+-- exactly like it jumps to regular workspace N outside it.
+local function number_key_nav(n)
+    if hl.get_active_special_workspace() then
+        os.execute("bash " .. SPECIAL_NAV_SCRIPT .. " goto " .. n .. " &")
+        return
+    end
+    hl.dispatch(hl.dsp.focus({ workspace = n }))
+end
+
 for i = 1, 10 do
     local key = tostring(i % 10)
     hl.unbind("SUPER + " .. key)
-    hl.bind("SUPER + " .. key, function() safe_ws_focus(tostring(i)) end)
+    hl.bind("SUPER + " .. key, function() number_key_nav(tostring(i)) end)
 end
 
 -- SUPER+Z/X (and the SUPER+Y alias) cycle slots while inside the special

@@ -1,8 +1,8 @@
 diff --git a/modules/bar/workspaces/Workspaces.qml b/modules/bar/workspaces/Workspaces.qml
-index a46e1af0..11b4c8d0 100644
+index a46e1af0..832f1f15 100644
 --- a/modules/bar/workspaces/Workspaces.qml
 +++ b/modules/bar/workspaces/Workspaces.qml
-@@ -23,10 +23,119 @@ Item {
+@@ -23,10 +23,142 @@ Item {
      // there. Forced on regardless of the persisted config value.
      readonly property bool dynamicMode: Config.workspaces.dynamic || AxctlService.compositorName === "niri"
  
@@ -67,17 +67,40 @@ index a46e1af0..11b4c8d0 100644
 +        return m ? parseInt(m[1]) : 1;
 +    }
 +
-+    // Which special-group slots currently have windows, derived from the
-+    // live client list (special workspaces never show up in
-+    // AxctlService.workspaces -- only their windows, via a negative
-+    // workspace id and a "special:<n>" name, are queryable).
++    // AxctlService.clients.values' own workspace.name is just the numeric
++    // workspace id restated as a string (e.g. "-98"), not the Hyprland name
++    // -- only AxctlService.workspaces.values carries the real "special:<n>"
++    // name, keyed by that same numeric id. Build the id -> slot-number
++    // lookup from there, then cross-reference clients by id.
++    readonly property var specialSlotIdToNumber: {
++        const result = {};
++        const wsValues = AxctlService.workspaces && AxctlService.workspaces.values ? AxctlService.workspaces.values : [];
++        for (const ws of wsValues) {
++            const m = (ws.name || "").match(/^special:(\d+)$/);
++            if (m) result[ws.id] = parseInt(m[1]);
++        }
++        return result;
++    }
++
++    readonly property var specialSlotNumberToId: {
++        const result = {};
++        const idToSlot = specialSlotIdToNumber;
++        for (const idKey in idToSlot) {
++            result[idToSlot[idKey]] = parseInt(idKey);
++        }
++        return result;
++    }
++
++    // Which special-group slots currently have windows.
 +    readonly property var specialOccupiedSlots: {
 +        const values = AxctlService.clients && AxctlService.clients.values ? AxctlService.clients.values : [];
++        const idToSlot = specialSlotIdToNumber;
 +        const set = {};
 +        for (const c of values) {
-+            const name = c.workspace && c.workspace.name ? c.workspace.name : "";
-+            const m = name.match(/^special:(\d+)$/);
-+            if (m) set[parseInt(m[1])] = true;
++            const wsId = c.workspace ? c.workspace.id : undefined;
++            if (wsId !== undefined && idToSlot[wsId] !== undefined) {
++                set[idToSlot[wsId]] = true;
++            }
 +        }
 +        return Object.keys(set).map(Number).sort((a, b) => a - b);
 +    }
@@ -124,7 +147,7 @@ index a46e1af0..11b4c8d0 100644
      property int widgetPadding: 4
      property real radius: Styling.radius(0)
      property real startRadius: radius
-@@ -39,23 +148,23 @@ Item {
+@@ -39,23 +171,23 @@ Item {
      property real workspaceIconSizeShrinked: Math.round(workspaceButtonWidth * 0.5)
      property real workspaceIconOpacityShrinked: 1
      property real workspaceIconMarginShrinked: -4
@@ -153,7 +176,7 @@ index a46e1af0..11b4c8d0 100644
                  insert = i + 1;
              } else {
                  break;
-@@ -66,12 +175,41 @@ Item {
+@@ -66,12 +198,41 @@ Item {
      property var occupiedRanges: []
  
      function updateWorkspaceOccupied() {
@@ -197,7 +220,7 @@ index a46e1af0..11b4c8d0 100644
              if (!occupiedIds.includes(activeId)) {
                  occupiedIds.push(activeId);
                  occupiedIds.sort((a, b) => a - b);
-@@ -134,7 +272,7 @@ Item {
+@@ -134,7 +295,7 @@ Item {
      }
  
      function getWorkspaceId(index) {
@@ -206,7 +229,21 @@ index a46e1af0..11b4c8d0 100644
              // Pending slot: the active workspace niri just created, not
              // yet in the refreshed dynamic list.
              if (index >= dynamicWorkspaceIds.length) {
-@@ -184,6 +322,14 @@ Item {
+@@ -169,6 +330,13 @@ Item {
+         }
+     }
+ 
++    Connections {
++        target: AxctlService.clients
++        function onValuesChanged() {
++            updateTimer.restart();
++        }
++    }
++
+     Connections {
+         target: CompositorData
+         function onWindowListChanged() {
+@@ -184,6 +352,14 @@ Item {
          updateTimer.restart();
      }
  
@@ -221,7 +258,7 @@ index a46e1af0..11b4c8d0 100644
      implicitWidth: orientation === "vertical" ? baseSize : workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2
      implicitHeight: orientation === "vertical" ? workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2 : baseSize
  
-@@ -203,6 +349,13 @@ Item {
+@@ -203,6 +379,13 @@ Item {
  
      WheelHandler {
          onWheel: event => {
@@ -235,7 +272,7 @@ index a46e1af0..11b4c8d0 100644
              if (event.angleDelta.y < 0)
                  AxctlService.dispatch(`workspace r+1`);
              else if (event.angleDelta.y > 0)
-@@ -326,9 +479,18 @@ Item {
+@@ -326,9 +509,18 @@ Item {
      // Horizontal active workspace highlight
      StyledRect {
          id: activeHighlightH
@@ -255,7 +292,7 @@ index a46e1af0..11b4c8d0 100644
          property real activeWorkspaceMargin: 4
          // Two animated indices to create a stretchy transition effect
          property real idx1: workspaceIndexInGroup
-@@ -338,7 +500,7 @@ Item {
+@@ -338,7 +530,7 @@ Item {
          implicitHeight: workspaceButtonWidth - activeWorkspaceMargin * 2
  
          radius: {
@@ -264,7 +301,7 @@ index a46e1af0..11b4c8d0 100644
              const currentWorkspaceHasWindows = CompositorData.workspaceOccupationMap[activeWorkspaceId];
              if (workspacesWidget.radius === 0)
                  return 0;
-@@ -382,9 +544,18 @@ Item {
+@@ -382,9 +574,18 @@ Item {
      // Vertical active workspace highlight
      StyledRect {
          id: activeHighlightV
@@ -284,7 +321,7 @@ index a46e1af0..11b4c8d0 100644
          property real activeWorkspaceMargin: 4
          // Two animated indices to create a stretchy transition effect
          property real idx1: workspaceIndexInGroup
-@@ -394,7 +565,7 @@ Item {
+@@ -394,7 +595,7 @@ Item {
          implicitHeight: Math.abs(idx1 - idx2) * workspaceButtonWidth + workspaceButtonWidth - activeWorkspaceMargin * 2
  
          radius: {
@@ -293,7 +330,7 @@ index a46e1af0..11b4c8d0 100644
              const currentWorkspaceHasWindows = CompositorData.workspaceOccupationMap[activeWorkspaceId];
              if (workspacesWidget.radius === 0)
                  return 0;
-@@ -452,7 +623,13 @@ Item {
+@@ -452,7 +653,13 @@ Item {
                  id: button
                  property int workspaceValue: getWorkspaceId(index)
                  Layout.fillHeight: true
@@ -308,23 +345,23 @@ index a46e1af0..11b4c8d0 100644
                  width: workspaceButtonWidth
  
                  background: Item {
-@@ -460,7 +637,14 @@ Item {
+@@ -460,7 +667,14 @@ Item {
                      implicitWidth: workspaceButtonWidth
                      implicitHeight: workspaceButtonWidth
                      property var focusedWindow: {
 -                        const windowsInThisWorkspace = CompositorData.workspaceWindowsMap[button.workspaceValue] || [];
 +                        let windowsInThisWorkspace;
 +                        if (inSpecialWorkspace) {
-+                            const slotName = "special:" + button.workspaceValue;
++                            const slotId = specialSlotNumberToId[button.workspaceValue];
 +                            const values = AxctlService.clients && AxctlService.clients.values ? AxctlService.clients.values : [];
-+                            windowsInThisWorkspace = values.filter(c => c.workspace && c.workspace.name === slotName);
++                            windowsInThisWorkspace = (slotId !== undefined) ? values.filter(c => c.workspace && c.workspace.id === slotId) : [];
 +                        } else {
 +                            windowsInThisWorkspace = CompositorData.workspaceWindowsMap[button.workspaceValue] || [];
 +                        }
                          if (windowsInThisWorkspace.length === 0)
                              return null;
                          // Get the window with the lowest focusHistoryID (most recently focused)
-@@ -489,7 +673,7 @@ Item {
+@@ -489,7 +703,7 @@ Item {
                          font.pixelSize: workspaceLabelFontSize(text)
                          text: `${button.workspaceValue}`
                          elide: Text.ElideRight
@@ -333,7 +370,7 @@ index a46e1af0..11b4c8d0 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -500,13 +684,13 @@ Item {
+@@ -500,13 +714,13 @@ Item {
                          }
                      }
                      Rectangle {
@@ -349,7 +386,7 @@ index a46e1af0..11b4c8d0 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -567,6 +751,7 @@ Item {
+@@ -567,6 +781,7 @@ Item {
                              anchors.fill: mainAppIcon
                          }
                      }
@@ -357,7 +394,7 @@ index a46e1af0..11b4c8d0 100644
                  }
              }
          }
-@@ -589,7 +774,13 @@ Item {
+@@ -589,7 +804,13 @@ Item {
                  id: buttonVert
                  property int workspaceValue: getWorkspaceId(index)
                  Layout.fillWidth: true
@@ -372,23 +409,23 @@ index a46e1af0..11b4c8d0 100644
                  height: workspaceButtonWidth
  
                  background: Item {
-@@ -597,7 +788,14 @@ Item {
+@@ -597,7 +818,14 @@ Item {
                      implicitWidth: workspaceButtonWidth
                      implicitHeight: workspaceButtonWidth
                      property var focusedWindow: {
 -                        const windowsInThisWorkspace = CompositorData.workspaceWindowsMap[buttonVert.workspaceValue] || [];
 +                        let windowsInThisWorkspace;
 +                        if (inSpecialWorkspace) {
-+                            const slotName = "special:" + buttonVert.workspaceValue;
++                            const slotId = specialSlotNumberToId[buttonVert.workspaceValue];
 +                            const values = AxctlService.clients && AxctlService.clients.values ? AxctlService.clients.values : [];
-+                            windowsInThisWorkspace = values.filter(c => c.workspace && c.workspace.name === slotName);
++                            windowsInThisWorkspace = (slotId !== undefined) ? values.filter(c => c.workspace && c.workspace.id === slotId) : [];
 +                        } else {
 +                            windowsInThisWorkspace = CompositorData.workspaceWindowsMap[buttonVert.workspaceValue] || [];
 +                        }
                          if (windowsInThisWorkspace.length === 0)
                              return null;
                          // Get the window with the lowest focusHistoryID (most recently focused)
-@@ -626,7 +824,7 @@ Item {
+@@ -626,7 +854,7 @@ Item {
                          font.pixelSize: workspaceLabelFontSize(text)
                          text: `${buttonVert.workspaceValue}`
                          elide: Text.ElideRight
@@ -397,7 +434,7 @@ index a46e1af0..11b4c8d0 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -637,13 +835,13 @@ Item {
+@@ -637,13 +865,13 @@ Item {
                          }
                      }
                      Rectangle {
@@ -413,7 +450,7 @@ index a46e1af0..11b4c8d0 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -704,6 +902,7 @@ Item {
+@@ -704,6 +932,7 @@ Item {
                              anchors.fill: mainAppIconVert
                          }
                      }
