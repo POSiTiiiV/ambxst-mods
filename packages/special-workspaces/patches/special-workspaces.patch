@@ -1,8 +1,8 @@
 diff --git a/modules/bar/workspaces/Workspaces.qml b/modules/bar/workspaces/Workspaces.qml
-index a46e1af0..80721c20 100644
+index a46e1af0..11b4c8d0 100644
 --- a/modules/bar/workspaces/Workspaces.qml
 +++ b/modules/bar/workspaces/Workspaces.qml
-@@ -23,7 +23,60 @@ Item {
+@@ -23,10 +23,119 @@ Item {
      // there. Forced on regardless of the persisted config value.
      readonly property bool dynamicMode: Config.workspaces.dynamic || AxctlService.compositorName === "niri"
  
@@ -14,6 +14,30 @@ index a46e1af0..80721c20 100644
 +        preload: true
 +        watchChanges: true
 +        onFileChanged: reload()
++    }
++
++    // Watches this mod's own settings (keybind/dynamicMode/slotCount/
++    // animationStyle) so the special-group slot count/layout updates live
++    // when changed from the Mods settings page, without needing a reload.
++    FileView {
++        id: specialWsSettingsView
++        path: Quickshell.env("HOME") + "/.config/ambxst/mods/positive.special-workspaces.json"
++        preload: true
++        watchChanges: true
++        onFileChanged: reload()
++    }
++
++    readonly property bool specialDynamicMode: {
++        const txt = specialWsSettingsView.text() || "";
++        const m = txt.match(/"dynamicMode"\s*:\s*(true|false)/);
++        return m ? (m[1] === "true") : true;
++    }
++
++    readonly property int specialSlotCount: {
++        const txt = specialWsSettingsView.text() || "";
++        const m = txt.match(/"slotCount"\s*:\s*(\d+)/);
++        const n = m ? parseInt(m[1]) : 4;
++        return Math.max(2, Math.min(20, n));
 +    }
 +
 +    readonly property var specialWsData: {
@@ -33,6 +57,31 @@ index a46e1af0..80721c20 100644
 +
 +    readonly property bool inSpecialWorkspace: specialWsData.active
 +
++    // The special group is a separate, hidden "parallel" set of
++    // workspaces (slot 1, 2, 3...), named special:1/special:2/... by the
++    // Hyprland side. This extracts the current slot number so the bar can
++    // render it through the exact same numbering/occupancy machinery used
++    // for regular workspaces below.
++    readonly property int specialSlotNumber: {
++        const m = (specialWsData.name || "").match(/^special:(\d+)$/);
++        return m ? parseInt(m[1]) : 1;
++    }
++
++    // Which special-group slots currently have windows, derived from the
++    // live client list (special workspaces never show up in
++    // AxctlService.workspaces -- only their windows, via a negative
++    // workspace id and a "special:<n>" name, are queryable).
++    readonly property var specialOccupiedSlots: {
++        const values = AxctlService.clients && AxctlService.clients.values ? AxctlService.clients.values : [];
++        const set = {};
++        for (const c of values) {
++            const name = c.workspace && c.workspace.name ? c.workspace.name : "";
++            const m = name.match(/^special:(\d+)$/);
++            if (m) set[parseInt(m[1])] = true;
++        }
++        return Object.keys(set).map(Number).sort((a, b) => a - b);
++    }
++
 +    property int lastRegularWorkspaceId: 1
 +
 +    readonly property int rawWorkspaceId: {
@@ -46,9 +95,12 @@ index a46e1af0..80721c20 100644
 +        }
 +    }
 +
++    // While in the special group, the bar's "active workspace" is the
++    // current slot number -- not the saved regular workspace -- so slots
++    // render and highlight exactly like a normal workspace row.
 +    readonly property int effectiveActiveWorkspaceId: {
 +        if (inSpecialWorkspace) {
-+            return specialWsData.savedWorkspaceId || lastRegularWorkspaceId;
++            return specialSlotNumber;
 +        }
 +        if (rawWorkspaceId <= 0) {
 +            return lastRegularWorkspaceId;
@@ -60,11 +112,19 @@ index a46e1af0..80721c20 100644
 +        updateTimer.restart();
 +    }
 +
++    onInSpecialWorkspaceChanged: {
++        updateTimer.restart();
++    }
++
 +    readonly property int workspaceGroup: Math.floor((effectiveActiveWorkspaceId - 1) / Config.workspaces.shown)
      property var workspaceOccupied: []
      property var dynamicWorkspaceIds: []
-     property int effectiveWorkspaceCount: dynamicMode ? Math.max(dynamicWorkspaceIds.length, workspaceIndexInGroup + 1) : Config.workspaces.shown
-@@ -39,7 +92,7 @@ Item {
+-    property int effectiveWorkspaceCount: dynamicMode ? Math.max(dynamicWorkspaceIds.length, workspaceIndexInGroup + 1) : Config.workspaces.shown
++    property int effectiveWorkspaceCount: (dynamicMode || inSpecialWorkspace) ? Math.max(dynamicWorkspaceIds.length, workspaceIndexInGroup + 1) : Config.workspaces.shown
+     property int widgetPadding: 4
+     property real radius: Styling.radius(0)
+     property real startRadius: radius
+@@ -39,23 +148,23 @@ Item {
      property real workspaceIconSizeShrinked: Math.round(workspaceButtonWidth * 0.5)
      property real workspaceIconOpacityShrinked: 1
      property real workspaceIconMarginShrinked: -4
@@ -73,11 +133,12 @@ index a46e1af0..80721c20 100644
  
      // Sorted position the active workspace will occupy once the dynamic
      // list catches up. A workspace niri just created isn't in the list
-@@ -47,15 +100,15 @@ Item {
+     // yet (100ms refresh debounce); indexOf would return -1 there and
      // drag the stretchy highlight to an out-of-bounds slot first.
      property int workspaceIndexInGroup: {
-         if (!dynamicMode) {
+-        if (!dynamicMode) {
 -            return ((monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : undefined) - 1 || 0) % Config.workspaces.shown;
++        if (!dynamicMode && !inSpecialWorkspace) {
 +            return (effectiveActiveWorkspaceId - 1) % Config.workspaces.shown;
          }
 -        const idx = dynamicWorkspaceIds.indexOf(activeWorkspaceId);
@@ -92,8 +153,39 @@ index a46e1af0..80721c20 100644
                  insert = i + 1;
              } else {
                  break;
-@@ -68,10 +121,10 @@ Item {
+@@ -66,12 +175,41 @@ Item {
+     property var occupiedRanges: []
+ 
      function updateWorkspaceOccupied() {
++        if (inSpecialWorkspace) {
++            // The special group reuses the exact same rendering/occupancy
++            // machinery as regular workspaces -- it just sources its slot
++            // list from specialOccupiedSlots/specialSlotCount instead of
++            // AxctlService.workspaces/Config.workspaces.shown.
++            if (specialDynamicMode) {
++                const ids = specialOccupiedSlots.slice();
++                const activeId = effectiveActiveWorkspaceId;
++                if (!ids.includes(activeId)) {
++                    ids.push(activeId);
++                    ids.sort((a, b) => a - b);
++                }
++                dynamicWorkspaceIds = ids;
++                workspaceOccupied = ids.map(() => true);
++            } else {
++                const occSet = {};
++                for (const s of specialOccupiedSlots) occSet[s] = true;
++                const ids = [];
++                const occ = [];
++                for (let i = 1; i <= specialSlotCount; i++) {
++                    ids.push(i);
++                    occ.push(!!occSet[i]);
++                }
++                dynamicWorkspaceIds = ids;
++                workspaceOccupied = occ;
++            }
++            updateOccupiedRanges();
++            return;
++        }
          if (dynamicMode) {
              // Get occupied workspace IDs using the precomputed occupation map, sorted and limited by 'shown'
 -            const occupiedIds = AxctlService.workspaces.values.filter(ws => CompositorData.workspaceOccupationMap[ws.id]).map(ws => ws.id).sort((a, b) => a - b).slice(0, Config.workspaces.shown);
@@ -105,15 +197,45 @@ index a46e1af0..80721c20 100644
              if (!occupiedIds.includes(activeId)) {
                  occupiedIds.push(activeId);
                  occupiedIds.sort((a, b) => a - b);
-@@ -203,6 +256,7 @@ Item {
+@@ -134,7 +272,7 @@ Item {
+     }
+ 
+     function getWorkspaceId(index) {
+-        if (dynamicMode) {
++        if (dynamicMode || inSpecialWorkspace) {
+             // Pending slot: the active workspace niri just created, not
+             // yet in the refreshed dynamic list.
+             if (index >= dynamicWorkspaceIds.length) {
+@@ -184,6 +322,14 @@ Item {
+         updateTimer.restart();
+     }
+ 
++    onSpecialDynamicModeChanged: {
++        updateTimer.restart();
++    }
++
++    onSpecialSlotCountChanged: {
++        updateTimer.restart();
++    }
++
+     implicitWidth: orientation === "vertical" ? baseSize : workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2
+     implicitHeight: orientation === "vertical" ? workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2 : baseSize
+ 
+@@ -203,6 +349,13 @@ Item {
  
      WheelHandler {
          onWheel: event => {
-+            if (inSpecialWorkspace) return;
++            if (inSpecialWorkspace) {
++                if (event.angleDelta.y < 0)
++                    Quickshell.execDetached(["bash", "-c", "~/.config/hypr/scripts/special-workspace-nav.sh next"]);
++                else if (event.angleDelta.y > 0)
++                    Quickshell.execDetached(["bash", "-c", "~/.config/hypr/scripts/special-workspace-nav.sh prev"]);
++                return;
++            }
              if (event.angleDelta.y < 0)
                  AxctlService.dispatch(`workspace r+1`);
              else if (event.angleDelta.y > 0)
-@@ -326,9 +380,18 @@ Item {
+@@ -326,9 +479,18 @@ Item {
      // Horizontal active workspace highlight
      StyledRect {
          id: activeHighlightH
@@ -133,7 +255,7 @@ index a46e1af0..80721c20 100644
          property real activeWorkspaceMargin: 4
          // Two animated indices to create a stretchy transition effect
          property real idx1: workspaceIndexInGroup
-@@ -338,7 +401,7 @@ Item {
+@@ -338,7 +500,7 @@ Item {
          implicitHeight: workspaceButtonWidth - activeWorkspaceMargin * 2
  
          radius: {
@@ -142,7 +264,7 @@ index a46e1af0..80721c20 100644
              const currentWorkspaceHasWindows = CompositorData.workspaceOccupationMap[activeWorkspaceId];
              if (workspacesWidget.radius === 0)
                  return 0;
-@@ -382,9 +445,18 @@ Item {
+@@ -382,9 +544,18 @@ Item {
      // Vertical active workspace highlight
      StyledRect {
          id: activeHighlightV
@@ -162,7 +284,7 @@ index a46e1af0..80721c20 100644
          property real activeWorkspaceMargin: 4
          // Two animated indices to create a stretchy transition effect
          property real idx1: workspaceIndexInGroup
-@@ -394,7 +466,7 @@ Item {
+@@ -394,7 +565,7 @@ Item {
          implicitHeight: Math.abs(idx1 - idx2) * workspaceButtonWidth + workspaceButtonWidth - activeWorkspaceMargin * 2
  
          radius: {
@@ -171,28 +293,38 @@ index a46e1af0..80721c20 100644
              const currentWorkspaceHasWindows = CompositorData.workspaceOccupationMap[activeWorkspaceId];
              if (workspacesWidget.radius === 0)
                  return 0;
-@@ -452,7 +524,10 @@ Item {
+@@ -452,7 +623,13 @@ Item {
                  id: button
                  property int workspaceValue: getWorkspaceId(index)
                  Layout.fillHeight: true
 -                onPressed: AxctlService.dispatch(`workspace ${workspaceValue}`)
 +                onPressed: {
-+                    if (inSpecialWorkspace) return;
++                    if (inSpecialWorkspace) {
++                        Quickshell.execDetached(["bash", "-c", "~/.config/hypr/scripts/special-workspace-nav.sh goto " + workspaceValue]);
++                        return;
++                    }
 +                    AxctlService.dispatch(`workspace ${workspaceValue}`);
 +                }
                  width: workspaceButtonWidth
  
                  background: Item {
-@@ -479,7 +554,7 @@ Item {
-                     }
- 
-                     Text {
--                        opacity: Config.workspaces.alwaysShowNumbers || ((Config.workspaces.showNumbers && (!Config.workspaces.showAppIcons || !workspaceButtonBackground.focusedWindow || Config.workspaces.alwaysShowNumbers)) || (Config.workspaces.alwaysShowNumbers && !Config.workspaces.showAppIcons)) ? 1 : 0
-+                        opacity: inSpecialWorkspace ? 0 : (Config.workspaces.alwaysShowNumbers || ((Config.workspaces.showNumbers && (!Config.workspaces.showAppIcons || !workspaceButtonBackground.focusedWindow || Config.workspaces.alwaysShowNumbers)) || (Config.workspaces.alwaysShowNumbers && !Config.workspaces.showAppIcons)) ? 1 : 0)
-                         z: 3
- 
-                         anchors.centerIn: parent
-@@ -489,7 +564,7 @@ Item {
+@@ -460,7 +637,14 @@ Item {
+                     implicitWidth: workspaceButtonWidth
+                     implicitHeight: workspaceButtonWidth
+                     property var focusedWindow: {
+-                        const windowsInThisWorkspace = CompositorData.workspaceWindowsMap[button.workspaceValue] || [];
++                        let windowsInThisWorkspace;
++                        if (inSpecialWorkspace) {
++                            const slotName = "special:" + button.workspaceValue;
++                            const values = AxctlService.clients && AxctlService.clients.values ? AxctlService.clients.values : [];
++                            windowsInThisWorkspace = values.filter(c => c.workspace && c.workspace.name === slotName);
++                        } else {
++                            windowsInThisWorkspace = CompositorData.workspaceWindowsMap[button.workspaceValue] || [];
++                        }
+                         if (windowsInThisWorkspace.length === 0)
+                             return null;
+                         // Get the window with the lowest focusHistoryID (most recently focused)
+@@ -489,7 +673,7 @@ Item {
                          font.pixelSize: workspaceLabelFontSize(text)
                          text: `${button.workspaceValue}`
                          elide: Text.ElideRight
@@ -201,12 +333,12 @@ index a46e1af0..80721c20 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -500,13 +575,13 @@ Item {
+@@ -500,13 +684,13 @@ Item {
                          }
                      }
                      Rectangle {
 -                        opacity: (Config.workspaces.showNumbers || Config.workspaces.alwaysShowNumbers || (Config.workspaces.showAppIcons && workspaceButtonBackground.focusedWindow)) ? 0 : (((monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : undefined) == button.workspaceValue) || workspaceOccupied[index] ? 1 : 0.5)
-+                        opacity: inSpecialWorkspace ? 0 : ((Config.workspaces.showNumbers || Config.workspaces.alwaysShowNumbers || (Config.workspaces.showAppIcons && workspaceButtonBackground.focusedWindow)) ? 0 : ((effectiveActiveWorkspaceId == button.workspaceValue) || workspaceOccupied[index] ? 1 : 0.5))
++                        opacity: (Config.workspaces.showNumbers || Config.workspaces.alwaysShowNumbers || (Config.workspaces.showAppIcons && workspaceButtonBackground.focusedWindow)) ? 0 : ((effectiveActiveWorkspaceId == button.workspaceValue) || workspaceOccupied[index] ? 1 : 0.5)
                          visible: opacity > 0
                          anchors.centerIn: parent
                          width: workspaceButtonWidth * 0.2
@@ -217,95 +349,46 @@ index a46e1af0..80721c20 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -520,7 +595,7 @@ Item {
-                         anchors.centerIn: parent
-                         width: workspaceButtonWidth
-                         height: workspaceButtonWidth
--                        opacity: !Config.workspaces.showAppIcons ? 0 : (workspaceButtonBackground.focusedWindow && !Config.workspaces.alwaysShowNumbers && Config.workspaces.showAppIcons) ? 1 : workspaceButtonBackground.focusedWindow ? workspaceIconOpacityShrinked : 0
-+                        opacity: inSpecialWorkspace ? 0 : (!Config.workspaces.showAppIcons ? 0 : (workspaceButtonBackground.focusedWindow && !Config.workspaces.alwaysShowNumbers && Config.workspaces.showAppIcons) ? 1 : workspaceButtonBackground.focusedWindow ? workspaceIconOpacityShrinked : 0)
-                         visible: opacity > 0
-                         IconImage {
-                             id: mainAppIcon
-@@ -567,6 +642,57 @@ Item {
+@@ -567,6 +751,7 @@ Item {
                              anchors.fill: mainAppIcon
                          }
                      }
 +
-+                    // Special workspace mode: Sleek dot (empty) or pill/blob (occupied/hidden apps)
-+                    Item {
-+                        id: specialWsIndicator
-+                        anchors.centerIn: parent
-+                        width: workspaceButtonWidth
-+                        height: workspaceButtonWidth
-+                        opacity: inSpecialWorkspace ? 1 : 0
-+                        visible: opacity > 0
-+
-+                        Behavior on opacity {
-+                            enabled: Config.animDuration > 0
-+                            NumberAnimation {
-+                                duration: 150
-+                                easing.type: Easing.OutQuad
-+                            }
-+                        }
-+
-+                        readonly property bool isOccupied: !!workspaceOccupied[index]
-+                        readonly property bool isAnchor: (effectiveActiveWorkspaceId == button.workspaceValue)
-+
-+                        Rectangle {
-+                            anchors.centerIn: parent
-+                            width: specialWsIndicator.isOccupied ? 14 : 5
-+                            height: specialWsIndicator.isOccupied ? 6 : 5
-+                            radius: specialWsIndicator.isOccupied ? 3 : 2.5
-+
-+                            color: specialWsIndicator.isAnchor ?
-+                                       Styling.srItem("primary") :
-+                                       (specialWsIndicator.isOccupied ? Colors.overBackground : Colors.outline)
-+
-+                            opacity: specialWsIndicator.isAnchor ? 1.0 : (specialWsIndicator.isOccupied ? 0.75 : 0.25)
-+
-+                            Behavior on width {
-+                                enabled: Config.animDuration > 0
-+                                NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
-+                            }
-+                            Behavior on height {
-+                                enabled: Config.animDuration > 0
-+                                NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
-+                            }
-+                            Behavior on opacity {
-+                                enabled: Config.animDuration > 0
-+                                NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
-+                            }
-+                            Behavior on color {
-+                                enabled: Config.animDuration > 0
-+                                ColorAnimation { duration: 150 }
-+                            }
-+                        }
-+                    }
                  }
              }
          }
-@@ -589,7 +715,10 @@ Item {
+@@ -589,7 +774,13 @@ Item {
                  id: buttonVert
                  property int workspaceValue: getWorkspaceId(index)
                  Layout.fillWidth: true
 -                onPressed: AxctlService.dispatch(`workspace ${workspaceValue}`)
 +                onPressed: {
-+                    if (inSpecialWorkspace) return;
++                    if (inSpecialWorkspace) {
++                        Quickshell.execDetached(["bash", "-c", "~/.config/hypr/scripts/special-workspace-nav.sh goto " + workspaceValue]);
++                        return;
++                    }
 +                    AxctlService.dispatch(`workspace ${workspaceValue}`);
 +                }
                  height: workspaceButtonWidth
  
                  background: Item {
-@@ -616,7 +745,7 @@ Item {
-                     }
- 
-                     Text {
--                        opacity: Config.workspaces.alwaysShowNumbers || ((Config.workspaces.showNumbers && (!Config.workspaces.showAppIcons || !workspaceButtonBackgroundVert.focusedWindow || Config.workspaces.alwaysShowNumbers)) || (Config.workspaces.alwaysShowNumbers && !Config.workspaces.showAppIcons)) ? 1 : 0
-+                        opacity: inSpecialWorkspace ? 0 : (Config.workspaces.alwaysShowNumbers || ((Config.workspaces.showNumbers && (!Config.workspaces.showAppIcons || !workspaceButtonBackgroundVert.focusedWindow || Config.workspaces.alwaysShowNumbers)) || (Config.workspaces.alwaysShowNumbers && !Config.workspaces.showAppIcons)) ? 1 : 0)
-                         z: 3
- 
-                         anchors.centerIn: parent
-@@ -626,7 +755,7 @@ Item {
+@@ -597,7 +788,14 @@ Item {
+                     implicitWidth: workspaceButtonWidth
+                     implicitHeight: workspaceButtonWidth
+                     property var focusedWindow: {
+-                        const windowsInThisWorkspace = CompositorData.workspaceWindowsMap[buttonVert.workspaceValue] || [];
++                        let windowsInThisWorkspace;
++                        if (inSpecialWorkspace) {
++                            const slotName = "special:" + buttonVert.workspaceValue;
++                            const values = AxctlService.clients && AxctlService.clients.values ? AxctlService.clients.values : [];
++                            windowsInThisWorkspace = values.filter(c => c.workspace && c.workspace.name === slotName);
++                        } else {
++                            windowsInThisWorkspace = CompositorData.workspaceWindowsMap[buttonVert.workspaceValue] || [];
++                        }
+                         if (windowsInThisWorkspace.length === 0)
+                             return null;
+                         // Get the window with the lowest focusHistoryID (most recently focused)
+@@ -626,7 +824,7 @@ Item {
                          font.pixelSize: workspaceLabelFontSize(text)
                          text: `${buttonVert.workspaceValue}`
                          elide: Text.ElideRight
@@ -314,12 +397,12 @@ index a46e1af0..80721c20 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -637,13 +766,13 @@ Item {
+@@ -637,13 +835,13 @@ Item {
                          }
                      }
                      Rectangle {
 -                        opacity: (Config.workspaces.showNumbers || Config.workspaces.alwaysShowNumbers || (Config.workspaces.showAppIcons && workspaceButtonBackgroundVert.focusedWindow)) ? 0 : (((monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : undefined) == buttonVert.workspaceValue) || workspaceOccupied[index] ? 1 : 0.5)
-+                        opacity: inSpecialWorkspace ? 0 : ((Config.workspaces.showNumbers || Config.workspaces.alwaysShowNumbers || (Config.workspaces.showAppIcons && workspaceButtonBackgroundVert.focusedWindow)) ? 0 : ((effectiveActiveWorkspaceId == buttonVert.workspaceValue) || workspaceOccupied[index] ? 1 : 0.5))
++                        opacity: (Config.workspaces.showNumbers || Config.workspaces.alwaysShowNumbers || (Config.workspaces.showAppIcons && workspaceButtonBackgroundVert.focusedWindow)) ? 0 : ((effectiveActiveWorkspaceId == buttonVert.workspaceValue) || workspaceOccupied[index] ? 1 : 0.5)
                          visible: opacity > 0
                          anchors.centerIn: parent
                          width: workspaceButtonWidth * 0.2
@@ -330,70 +413,11 @@ index a46e1af0..80721c20 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -657,7 +786,7 @@ Item {
-                         anchors.centerIn: parent
-                         width: workspaceButtonWidth
-                         height: workspaceButtonWidth
--                        opacity: !Config.workspaces.showAppIcons ? 0 : (workspaceButtonBackgroundVert.focusedWindow && !Config.workspaces.alwaysShowNumbers && Config.workspaces.showAppIcons) ? 1 : workspaceButtonBackgroundVert.focusedWindow ? workspaceIconOpacityShrinked : 0
-+                        opacity: inSpecialWorkspace ? 0 : (!Config.workspaces.showAppIcons ? 0 : (workspaceButtonBackgroundVert.focusedWindow && !Config.workspaces.alwaysShowNumbers && Config.workspaces.showAppIcons) ? 1 : workspaceButtonBackgroundVert.focusedWindow ? workspaceIconOpacityShrinked : 0)
-                         visible: opacity > 0
-                         IconImage {
-                             id: mainAppIconVert
-@@ -704,6 +833,57 @@ Item {
+@@ -704,6 +902,7 @@ Item {
                              anchors.fill: mainAppIconVert
                          }
                      }
 +
-+                    // Special workspace mode: Sleek dot (empty) or pill/blob (occupied/hidden apps)
-+                    Item {
-+                        id: specialWsIndicatorVert
-+                        anchors.centerIn: parent
-+                        width: workspaceButtonWidth
-+                        height: workspaceButtonWidth
-+                        opacity: inSpecialWorkspace ? 1 : 0
-+                        visible: opacity > 0
-+
-+                        Behavior on opacity {
-+                            enabled: Config.animDuration > 0
-+                            NumberAnimation {
-+                                duration: 150
-+                                easing.type: Easing.OutQuad
-+                            }
-+                        }
-+
-+                        readonly property bool isOccupied: !!workspaceOccupied[index]
-+                        readonly property bool isAnchor: (effectiveActiveWorkspaceId == buttonVert.workspaceValue)
-+
-+                        Rectangle {
-+                            anchors.centerIn: parent
-+                            width: specialWsIndicatorVert.isOccupied ? 6 : 5
-+                            height: specialWsIndicatorVert.isOccupied ? 14 : 5
-+                            radius: specialWsIndicatorVert.isOccupied ? 3 : 2.5
-+
-+                            color: specialWsIndicatorVert.isAnchor ?
-+                                       Styling.srItem("primary") :
-+                                       (specialWsIndicatorVert.isOccupied ? Colors.overBackground : Colors.outline)
-+
-+                            opacity: specialWsIndicatorVert.isAnchor ? 1.0 : (specialWsIndicatorVert.isOccupied ? 0.75 : 0.25)
-+
-+                            Behavior on width {
-+                                enabled: Config.animDuration > 0
-+                                NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
-+                            }
-+                            Behavior on height {
-+                                enabled: Config.animDuration > 0
-+                                NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
-+                            }
-+                            Behavior on opacity {
-+                                enabled: Config.animDuration > 0
-+                                NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
-+                            }
-+                            Behavior on color {
-+                                enabled: Config.animDuration > 0
-+                                ColorAnimation { duration: 150 }
-+                            }
-+                        }
-+                    }
                  }
              }
          }

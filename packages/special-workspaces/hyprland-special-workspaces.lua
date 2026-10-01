@@ -1,22 +1,51 @@
 -- =============================================================================
--- Isolated Special Workspaces & Bidirectional Scratchpad Movement
---
--- Not an Ambxst mod file -- copy this into your own
--- ~/.config/hypr/lua/custom/custom_binds.lua (or loadfile() it from there).
--- Reload with `hyprctl reload` afterwards. See this mod's README for the
--- companion window-rule snippet that auto-assigns apps into a special
--- workspace on launch.
+-- Special Workspace Group (positive.special-workspaces)
 -- =============================================================================
+-- One hidden group of special workspaces (slot 1, 2, 3...), toggled with a
+-- single configurable keybind that always opens slot 1. Once inside, SUPER+Z/X
+-- and scrolling/clicking the bar move between slots exactly like regular
+-- workspaces (see ~/.config/hypr/scripts/special-workspace-nav.sh for the
+-- slot-cycling logic shared with the bar's scroll/click handlers). 3-finger
+-- swipe is intentionally left alone -- Hyprland's touchpad gesture is
+-- hardcoded to regular, numbered workspaces with no hook for custom targets,
+-- so it isn't repurposed here.
 
--- Bezier curve used by the workspace-fade animation below when leaving
--- special-workspace mode. Defined here (pcall-guarded in case your own
--- config already registers a curve of this name) so this file works
--- standalone -- it previously assumed "almostLinear" already existed,
--- which broke on any system that hadn't separately defined it.
-pcall(hl.curve, "almostLinear", { type = "bezier", points = { {0.5, 0.5}, {0.75, 1} } })
+local SPECIAL_NAV_SCRIPT = os.getenv("HOME") .. "/.config/hypr/scripts/special-workspace-nav.sh"
+local SPECIAL_SETTINGS_PATH = os.getenv("HOME") .. "/.config/ambxst/mods/positive.special-workspaces.json"
+
+-- Minimal ad hoc reader for this mod's own flat settings file -- avoids
+-- pulling in a full JSON library for four simple values.
+local function read_json_value(text, key, default)
+    local str_v = text:match('"' .. key .. '"%s*:%s*"([^"]*)"')
+    if str_v then return str_v end
+    if text:match('"' .. key .. '"%s*:%s*true') then return true end
+    if text:match('"' .. key .. '"%s*:%s*false') then return false end
+    local num_v = text:match('"' .. key .. '"%s*:%s*(-?%d+%.?%d*)')
+    if num_v then return tonumber(num_v) end
+    return default
+end
+
+local function load_special_ws_settings()
+    local f = io.open(SPECIAL_SETTINGS_PATH, "r")
+    local text = f and f:read("*a") or ""
+    if f then f:close() end
+    return {
+        keybind = read_json_value(text, "keybind", "SUPER + SHIFT + V"),
+        animationStyle = read_json_value(text, "animationStyle", "fade"),
+    }
+end
+
+local sw_settings = load_special_ws_settings()
 
 -- State synchronization for Ambxst dock
 local last_regular_ws = nil
+
+local function special_group_animation()
+    if sw_settings.animationStyle == "slide" then
+        return { leaf = "workspaces", enabled = true, speed = 3.0, spring = "workspaceSpring", style = "slidefade 20%" }
+    end
+    return { leaf = "workspaces", enabled = true, speed = 2.2, bezier = "almostLinear", style = "fade" }
+end
 
 local function set_special_mode_safety(in_special)
     if in_special then
@@ -25,24 +54,24 @@ local function set_special_mode_safety(in_special)
             workspace_swipe_cancel_ratio = 1.0,
             workspace_swipe_min_speed_to_force = 9999
         } })
-        pcall(hl.animation, { leaf = "workspaces", enabled = false })
+        pcall(hl.animation, special_group_animation())
     else
         pcall(hl.config, { gestures = {
             workspace_swipe_distance = 300,
             workspace_swipe_cancel_ratio = 0.5,
             workspace_swipe_min_speed_to_force = 30
         } })
-        pcall(hl.animation, { leaf = "workspaces", enabled = true, speed = 1.94, bezier = "almostLinear", style = "fade" })
+        -- Restores custom_rules.lua's own regular-workspace animation.
+        pcall(hl.animation, { leaf = "workspaces", enabled = true, speed = 3.0, spring = "workspaceSpring", style = "slidefade 20%" })
     end
 end
 
 -- Recover a previously-persisted saved_regular_ws_id from the state file.
 -- Needed because `hyprctl reload` (e.g. triggered by a wallpaper change via
--- matugen's post_hook, or positive.theme-sync's opacity/blur settings) re-
--- executes this whole script, wiping the in-memory last_regular_ws back to
--- nil even while still inside a special workspace. Without this,
--- write_special_ws_state would fall back to workspace 1 and corrupt the
--- saved workspace for no reason other than a config reload.
+-- matugen's post_hook) re-executes this whole script, wiping the in-memory
+-- last_regular_ws back to nil even while still inside a special workspace.
+-- Without this, write_special_ws_state would fall back to workspace 1 and
+-- corrupt the saved workspace for no reason other than a config reload.
 local function read_saved_regular_ws_from_file()
     local f = io.open("/tmp/ambxst_special_ws.txt", "r")
     if not f then return nil end
@@ -93,40 +122,19 @@ write_special_ws_state(hl.get_active_special_workspace())
 -- Listen to compositor special workspace changes
 hl.on("workspace.special_active", write_special_ws_state)
 
-local function toggle_isolated_special(special_name)
+-- Toggle the special group: opens slot 1 (regardless of occupancy) if not
+-- currently inside the group, or closes back to the saved regular workspace
+-- if already inside (any slot).
+local function toggle_special_group()
     local active_sw = hl.get_active_special_workspace()
     local cur_ws = hl.get_active_workspace()
 
-    -- Check if the requested special workspace is currently open
-    local is_currently_open = false
-    if active_sw then
-        if special_name == "" or special_name == "special" then
-            if active_sw.name == "special" or active_sw.name == "special:special" then
-                is_currently_open = true
-            end
-        else
-            if active_sw.name == "special:" .. special_name or active_sw.name == special_name then
-                is_currently_open = true
-            end
-        end
-    end
-
-    if is_currently_open then
-        -- Close the special workspace
-        hl.dispatch(hl.dsp.workspace.toggle_special(special_name))
-        -- Restore the previous regular workspace.
-        -- Fallback: if last_regular_ws was corrupted (e.g. by a config reload),
-        -- read the saved ws id from the state file before it gets cleared.
+    if active_sw and active_sw.id and active_sw.id < 0 then
+        local slot_name = active_sw.name:gsub("^special:", "")
+        hl.dispatch(hl.dsp.workspace.toggle_special(slot_name))
         local target_ws = last_regular_ws
         if not target_ws or target_ws <= 0 then
-            local f = io.open("/tmp/ambxst_special_ws.txt", "r")
-            if f then
-                local lines = {}
-                for line in f:lines() do lines[#lines + 1] = line end
-                f:close()
-                local saved = tonumber(lines[3])
-                if saved and saved > 0 then target_ws = saved end
-            end
+            target_ws = read_saved_regular_ws_from_file() or 1
         end
         last_regular_ws = nil
         write_special_ws_state(nil)
@@ -134,14 +142,6 @@ local function toggle_isolated_special(special_name)
             hl.dispatch(hl.dsp.focus({ workspace = target_ws }))
         end
     else
-        -- If another special workspace is currently open, close it first
-        if active_sw then
-            local other_name = active_sw.name:gsub("^special:", "")
-            if other_name == "special" then other_name = "" end
-            hl.dispatch(hl.dsp.workspace.toggle_special(other_name))
-        end
-
-        -- Record the real regular workspace before isolating
         if not last_regular_ws or last_regular_ws <= 0 then
             if cur_ws and cur_ws.id > 0 and cur_ws.name ~= "isolated" then
                 last_regular_ws = cur_ws.id
@@ -149,18 +149,24 @@ local function toggle_isolated_special(special_name)
                 last_regular_ws = 1
             end
         end
-
-        -- Always focus isolated empty workspace in background so no windows bleed through
         hl.dispatch(hl.dsp.focus({ workspace = "name:isolated" }))
-
-        -- Write state with saved regular workspace before opening
-        write_special_ws_state({ id = -99, name = special_name })
-
-        hl.dispatch(hl.dsp.workspace.toggle_special(special_name))
+        write_special_ws_state({ id = -99, name = "1" })
+        hl.dispatch(hl.dsp.workspace.toggle_special("1"))
     end
 end
 
--- Guard against switching regular workspaces while inside special workspace
+local function bind_special_toggle()
+    local kb = sw_settings.keybind
+    pcall(hl.unbind, kb)
+    local ok = pcall(hl.bind, kb, toggle_special_group)
+    if not ok then
+        pcall(hl.unbind, "SUPER + SHIFT + V")
+        pcall(hl.bind, "SUPER + SHIFT + V", toggle_special_group)
+    end
+end
+bind_special_toggle()
+
+-- Guard against switching regular workspaces while inside the special group
 hl.on("workspace.active", function(ws)
     local sw = hl.get_active_special_workspace()
     if sw and sw.id and ws and ws.name ~= "isolated" then
@@ -168,16 +174,16 @@ hl.on("workspace.active", function(ws)
         hl.dispatch(hl.dsp.focus({ workspace = "name:isolated" }))
         return
     end
-    -- NOTE: Do NOT clear last_regular_ws here — config reloads (wallpaper
-    -- changes, theme-sync settings) fire workspace.active events that would
-    -- corrupt the saved workspace. last_regular_ws is only cleared
-    -- intentionally when closing the special workspace in toggle_isolated_special.
+    -- NOTE: Do NOT clear last_regular_ws here — wallpaper changes fire workspace.active
+    -- events that would corrupt the saved workspace. last_regular_ws is only cleared
+    -- intentionally when closing the special group in toggle_special_group.
 end)
 
--- Disable switching to real workspaces while inside special workspace
+-- SUPER+1-10 and e+1/e-1 (move-to-empty-workspace) stay blocked while inside
+-- the special group -- only the toggle keybind escapes back to regular.
 local function safe_ws_focus(target)
     if hl.get_active_special_workspace() then
-        return -- Block switching to real workspaces while special workspace is open
+        return
     end
     hl.dispatch(hl.dsp.focus({ workspace = target }))
 end
@@ -188,16 +194,26 @@ for i = 1, 10 do
     hl.bind("SUPER + " .. key, function() safe_ws_focus(tostring(i)) end)
 end
 
--- Intercept SUPER + X and SUPER + Z (+1 and -1)
+-- SUPER+Z/X (and the SUPER+Y alias) cycle slots while inside the special
+-- group, instead of no-op'ing -- same script the bar's scroll/click
+-- handlers call, so there's a single source of truth for slot-cycling.
+local function ws_nav_or_special(target, special_direction)
+    if hl.get_active_special_workspace() then
+        hl.dispatch(hl.dsp.exec_cmd("bash " .. SPECIAL_NAV_SCRIPT .. " " .. special_direction))
+        return
+    end
+    hl.dispatch(hl.dsp.focus({ workspace = target }))
+end
+
 hl.unbind("SUPER + X")
-hl.bind("SUPER + X", function() safe_ws_focus("+1") end)
+hl.bind("SUPER + X", function() ws_nav_or_special("+1", "next") end)
 
 hl.unbind("SUPER + Z")
-hl.bind("SUPER + Z", function() safe_ws_focus("-1") end)
+hl.bind("SUPER + Z", function() ws_nav_or_special("-1", "prev") end)
 
 -- Intercept SUPER + Y (for QWERTZ keyboards or layout variations)
 hl.unbind("SUPER + Y")
-hl.bind("SUPER + Y", function() safe_ws_focus("-1") end)
+hl.bind("SUPER + Y", function() ws_nav_or_special("-1", "prev") end)
 
 -- Intercept SUPER + SHIFT + X and SUPER + SHIFT + Z (e+1 and e-1)
 hl.unbind("SUPER + SHIFT + X")
@@ -212,9 +228,13 @@ hl.bind("SUPER + mouse_down", function() safe_ws_focus("e+1") end)
 hl.unbind("SUPER + mouse_up")
 hl.bind("SUPER + mouse_up", function() safe_ws_focus("e-1") end)
 
--- Symmetrical bidirectional move: moves window into special workspace if outside,
--- or restores it to the active regular workspace if already inside.
-local function toggle_move_special(target_special)
+-- Move the active window into/out of slot 1 (SUPER + ALT + V). App
+-- auto-assignment (custom_rules.lua) covers Discord -> slot 1 and
+-- Spotify/Sonora -> slot 2 by default; this is for anything else you want
+-- to throw in/out manually.
+hl.unbind("SUPER + ALT + G")
+hl.unbind("SUPER + ALT + V")
+hl.bind("SUPER + ALT + V", function()
     local win = hl.get_active_window()
     if not win then return end
 
@@ -226,7 +246,6 @@ local function toggle_move_special(target_special)
     end
 
     if in_special then
-        -- Move back to regular workspace
         local dest = "1"
         if last_regular_ws and last_regular_ws > 0 then
             dest = tostring(last_regular_ws)
@@ -238,19 +257,7 @@ local function toggle_move_special(target_special)
         end
         hl.dispatch(hl.dsp.window.move({ workspace = dest }))
     else
-        -- Move to target special workspace
-        hl.dispatch(hl.dsp.window.move({ workspace = target_special }))
+        hl.dispatch(hl.dsp.window.move({ workspace = "special:1" }))
     end
-end
+end)
 
--- Discord Special Workspace (Super + Shift + G to toggle, Super + Alt + G to move)
-hl.unbind("SUPER + SHIFT + G")
-hl.unbind("SUPER + ALT + G")
-hl.bind("SUPER + SHIFT + G", function() toggle_isolated_special("discord") end)
-hl.bind("SUPER + ALT + G", function() toggle_move_special("special:discord") end)
-
--- Music Special Workspace (Super + Shift + V to toggle, Super + Alt + V to move)
-hl.unbind("SUPER + SHIFT + V")
-hl.unbind("SUPER + ALT + V")
-hl.bind("SUPER + SHIFT + V", function() toggle_isolated_special("") end)
-hl.bind("SUPER + ALT + V", function() toggle_move_special("special") end)

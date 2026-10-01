@@ -3,8 +3,8 @@
   "manifestVersion": 1,
   "id": "positive.special-workspaces",
   "name": "Special Workspaces",
-  "version": "2.0.0",
-  "description": "Requires drpezzer.roadie for full effect. Isolated special-workspace state and UI on the workspace bar: per-button dot/pill indicators, dimmed highlight, blocked navigation while isolated. Dock auto-hide/fullscreen awareness of special-workspace windows is now provided by drpezzer.roadie directly. Pairs with positive.workspace-app-indicator for the focused-app badge.",
+  "version": "3.0.0",
+  "description": "Requires drpezzer.roadie for full effect. A single hidden group of special workspaces (slot 1, 2, 3...) with its own configurable toggle keybind, navigable with SUPER+Z/X, scroll, or clicking the bar exactly like regular workspaces. Dock auto-hide/fullscreen awareness is provided by drpezzer.roadie directly. Pairs with positive.workspace-app-indicator for the focused-app badge.",
   "license": "MIT",
   "author": "POSiTiiiV",
   "compatibility": {
@@ -16,9 +16,19 @@
   "commands": [],
   "permissions": [
     "Reads /tmp/ambxst_special_ws.txt to track the active isolated special workspace",
-    "Blocks workspace navigation and dims the active-workspace highlight while a special workspace is open"
+    "Renders special-group slots on the workspace bar using the same numbering/occupancy display as regular workspaces, plus a dimmed highlight marker",
+    "Runs ~/.config/hypr/scripts/special-workspace-nav.sh (installed separately, see README) to switch slots when scrolling or clicking the bar while in the special group",
+    "Runs 'hyprctl reload' when this mod's keybind/slot-count/animation settings change"
   ],
+  "settings": {
+    "schema": "settings.json"
+  },
   "operations": [
+    {
+      "type": "overlay",
+      "source": "payload/modules/services/SpecialWorkspacesService.qml",
+      "target": "modules/services/SpecialWorkspacesService.qml"
+    },
     {
       "type": "patch",
       "source": "patches/special-workspaces.patch"

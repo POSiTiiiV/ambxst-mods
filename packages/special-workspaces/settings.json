@@ -1,0 +1,40 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Axenide/Ambxst/dev/docs/mods/settings.schema.json",
+  "version": 1,
+  "fields": [
+    {
+      "key": "keybind",
+      "label": "Toggle keybind",
+      "description": "Hyprland bind syntax (e.g. \"SUPER + SHIFT + V\") for opening/closing the special-workspace group. Always jumps to slot 1 when opening. Needs 'hyprctl reload' to apply -- triggered automatically when this is saved.",
+      "type": "string",
+      "default": "SUPER + SHIFT + V"
+    },
+    {
+      "key": "dynamicMode",
+      "label": "Unlimited special workspaces",
+      "description": "When on, the special group has no fixed size -- SUPER+Z/X and scrolling can always create one more slot past the last occupied one. Turn off to use a fixed slot count instead, which enables wraparound (last slot back to slot 1, and vice versa).",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "slotCount",
+      "label": "Fixed slot count",
+      "description": "Only used when 'Unlimited special workspaces' is off.",
+      "type": "integer",
+      "default": 4,
+      "minimum": 2,
+      "maximum": 20
+    },
+    {
+      "key": "animationStyle",
+      "label": "Special-group transition animation",
+      "description": "Animation used when opening/closing the special group, and when moving between its slots.",
+      "type": "enum",
+      "default": "fade",
+      "options": [
+        { "label": "Fade", "value": "fade" },
+        { "label": "Slide", "value": "slide" }
+      ]
+    }
+  ]
+}

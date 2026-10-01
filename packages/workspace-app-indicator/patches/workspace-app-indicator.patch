@@ -1,8 +1,8 @@
 diff --git a/modules/bar/workspaces/Workspaces.qml b/modules/bar/workspaces/Workspaces.qml
-index 80721c20..0ff87e72 100644
+index 11b4c8d0..3943b646 100644
 --- a/modules/bar/workspaces/Workspaces.qml
 +++ b/modules/bar/workspaces/Workspaces.qml
-@@ -237,8 +237,94 @@
+@@ -330,8 +330,88 @@
          updateTimer.restart();
      }
  
@@ -11,7 +11,7 @@ index 80721c20..0ff87e72 100644
 +    // Focused-app identity for the currently active workspace, regular or
 +    // special. In special-workspace mode this looks at specialWsData.id
 +    // (the special workspace itself) instead of effectiveActiveWorkspaceId
-+    // (which holds the *saved regular* workspace while isolated).
++    // (which now holds the current *slot number*, not a real workspace id).
 +    readonly property int focusLookupWorkspaceId: inSpecialWorkspace ? specialWsData.id : effectiveActiveWorkspaceId
 +
 +    readonly property var activeAppWindow: {
@@ -41,13 +41,12 @@ index 80721c20..0ff87e72 100644
 +            if (activeAppDesktopEntry && activeAppDesktopEntry.name) return activeAppDesktopEntry.name;
 +            if (activeAppWindow.class) return activeAppWindow.class.charAt(0).toUpperCase() + activeAppWindow.class.slice(1);
 +        }
-+        // No window focused yet in an empty special workspace — fall back to
-+        // a name derived from the workspace itself (e.g. "Music", "Discord").
++        // No window focused yet in an empty special slot -- slot numbers
++        // don't carry app identity on their own (that's just a default
++        // window-rule assignment the user can change), so fall back to a
++        // generic label naming the slot itself rather than guessing an app.
 +        if (inSpecialWorkspace) {
-+            var wsName = (specialWsData && specialWsData.name) ? specialWsData.name : "";
-+            wsName = wsName.replace(/^special:?/, "").trim();
-+            if (!wsName || wsName === "special") return "Music";
-+            return wsName.charAt(0).toUpperCase() + wsName.slice(1);
++            return "Special " + specialSlotNumber;
 +        }
 +        return "";
 +    }
@@ -60,12 +59,7 @@ index 80721c20..0ff87e72 100644
 +            return Quickshell.iconPath(AppSearch.getCachedIcon(activeAppWindow.class), "image-missing");
 +        }
 +        if (inSpecialWorkspace) {
-+            var wsName = (specialWsData && specialWsData.name) ? specialWsData.name.toLowerCase() : "";
-+            wsName = wsName.replace(/^special:?/, "").trim();
-+            if (wsName.includes("discord")) return Quickshell.iconPath("discord", "chat");
-+            if (!wsName || wsName === "special" || wsName.includes("music") || wsName.includes("audio"))
-+                return Quickshell.iconPath("audio-player", "multimedia-audio-player");
-+            return Quickshell.iconPath("starred", "favorite");
++            return Quickshell.iconPath("view-pin", "favorite");
 +        }
 +        return Quickshell.iconPath("image-missing", "image-missing");
 +    }
@@ -74,7 +68,7 @@ index 80721c20..0ff87e72 100644
 +    // background chip doesn't visually fuse with the last workspace button.
 +    readonly property real activeAppBadgeGap: 6
 +
-+    // Additive, like the workspace row's own width — never touches the
++    // Additive, like the workspace row's own width -- never touches the
 +    // workspace button's own size, so the number pill stays stable.
 +    readonly property real activeAppBadgeWidth: (orientation === "horizontal" && activeAppName !== "") ? (activeAppBadge.implicitWidth + activeAppBadgeGap) : 0
 +    readonly property real activeAppBadgeHeight: (orientation === "vertical" && activeAppName !== "") ? (activeAppBadge.implicitHeight + activeAppBadgeGap) : 0
@@ -99,7 +93,7 @@ index 80721c20..0ff87e72 100644
  
      readonly property bool effectiveContainBar: Config.bar.containBar && ((Config.bar.frameEnabled !== undefined ? Config.bar.frameEnabled : false))
  
-@@ -513,8 +599,11 @@
+@@ -612,8 +692,11 @@
          z: 3
  
          spacing: 0
@@ -112,15 +106,15 @@ index 80721c20..0ff87e72 100644
          implicitHeight: workspaceButtonWidth
  
          Repeater {
-@@ -524,6 +613,7 @@
+@@ -623,6 +706,7 @@
                  id: button
                  property int workspaceValue: getWorkspaceId(index)
                  Layout.fillHeight: true
 +                Layout.preferredWidth: workspaceButtonWidth
                  onPressed: {
-                     if (inSpecialWorkspace) return;
-                     AxctlService.dispatch(`workspace ${workspaceValue}`);
-@@ -704,8 +794,11 @@
+                     if (inSpecialWorkspace) {
+                         Quickshell.execDetached(["bash", "-c", "~/.config/hypr/scripts/special-workspace-nav.sh goto " + workspaceValue]);
+@@ -763,8 +847,11 @@
          z: 3
  
          spacing: 0
@@ -133,15 +127,15 @@ index 80721c20..0ff87e72 100644
          implicitWidth: workspaceButtonWidth
  
          Repeater {
-@@ -715,6 +808,7 @@
+@@ -774,6 +861,7 @@
                  id: buttonVert
                  property int workspaceValue: getWorkspaceId(index)
                  Layout.fillWidth: true
 +                Layout.preferredHeight: workspaceButtonWidth
                  onPressed: {
-                     if (inSpecialWorkspace) return;
-                     AxctlService.dispatch(`workspace ${workspaceValue}`);
-@@ -888,4 +982,99 @@
+                     if (inSpecialWorkspace) {
+                         Quickshell.execDetached(["bash", "-c", "~/.config/hypr/scripts/special-workspace-nav.sh goto " + workspaceValue]);
+@@ -907,4 +995,99 @@
              }
          }
      }
@@ -177,7 +171,7 @@ index 80721c20..0ff87e72 100644
 +            }
 +        }
 +
-+        // Subtle background chip — makes the badge read as a distinct group
++        // Subtle background chip -- makes the badge read as a distinct group
 +        // without a hard edge. "internalbg" resolves to the same "background"
 +        // token as the bar's own fill (invisible on top of it); "common"
 +        // uses the "surface" token instead, giving real contrast while still
