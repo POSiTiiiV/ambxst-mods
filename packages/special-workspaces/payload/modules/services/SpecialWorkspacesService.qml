@@ -9,11 +9,12 @@ Singleton {
     readonly property string modId: "positive.special-workspaces"
 
     // Hyprland Lua re-reads these from the mod's own settings.json values
-    // file on load/reload -- they're not consumed directly by QML. This
-    // service's only job is to apply a 'hyprctl reload' whenever one of
-    // them changes, so a Settings-page edit takes effect immediately
-    // instead of silently waiting for the next manual reload.
-    readonly property var hyprlandKeys: ["keybind", "dynamicMode", "slotCount", "animationStyle"]
+    // file on load/reload. The bar's own QML picks up threshold/
+    // dynamicMode/slotCount live via its own settings FileView already --
+    // this service's job is just to apply a 'hyprctl reload' so the Lua
+    // side (keybind, boundary guard, Z/X wraparound) picks up the change
+    // too, instead of silently waiting for the next manual reload.
+    readonly property var hyprlandKeys: ["keybind", "threshold", "dynamicMode", "slotCount", "animationStyle"]
 
     function load() {
         if (typeof ModsService === "undefined" || typeof ModsService.getSettings !== "function") return;

@@ -1,31 +1,18 @@
 diff --git a/modules/bar/workspaces/Workspaces.qml b/modules/bar/workspaces/Workspaces.qml
-index 11b4c8d0..3943b646 100644
+index c5f4f050..e684fb51 100644
 --- a/modules/bar/workspaces/Workspaces.qml
 +++ b/modules/bar/workspaces/Workspaces.qml
-@@ -330,8 +330,88 @@
+@@ -268,8 +268,75 @@
          updateTimer.restart();
      }
  
 -    implicitWidth: orientation === "vertical" ? baseSize : workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2
 -    implicitHeight: orientation === "vertical" ? workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2 : baseSize
 +    // Focused-app identity for the currently active workspace, regular or
-+    // special. In special-workspace mode this looks at specialWsData.id
-+    // (the special workspace itself) instead of effectiveActiveWorkspaceId
-+    // (which now holds the current *slot number*, not a real workspace id).
-+    readonly property int focusLookupWorkspaceId: inSpecialWorkspace ? specialWsData.id : effectiveActiveWorkspaceId
-+
++    // in the special group -- rawWorkspaceId is always the real Hyprland
++    // workspace id either way, so no branching is needed here anymore.
 +    readonly property var activeAppWindow: {
-+        // Inside an isolated special workspace, Hyprland guarantees the
-+        // globally active toplevel is the one focused there. Prefer it:
-+        // Quickshell's native toplevel tracking (activeWindow) updates
-+        // immediately on every focus change, whereas axctl's focusHistoryID
-+        // snapshot only refreshes on the backend's next full state push,
-+        // which can lag behind a pure focus-only change (no window
-+        // open/close) until something else forces a re-sync.
-+        if (inSpecialWorkspace && activeWindow && activeWindow.appId) {
-+            return { class: activeWindow.appId };
-+        }
-+        const wins = CompositorData.workspaceWindowsMap[focusLookupWorkspaceId] || [];
++        const wins = CompositorData.workspaceWindowsMap[rawWorkspaceId] || [];
 +        if (wins.length === 0) return null;
 +        return wins.reduce(function(best, win) {
 +            const bestFocus = (best && best.focusHistoryID !== undefined ? best.focusHistoryID : Infinity);
@@ -93,7 +80,7 @@ index 11b4c8d0..3943b646 100644
  
      readonly property bool effectiveContainBar: Config.bar.containBar && ((Config.bar.frameEnabled !== undefined ? Config.bar.frameEnabled : false))
  
-@@ -612,8 +692,11 @@
+@@ -543,8 +610,11 @@
          z: 3
  
          spacing: 0
@@ -106,15 +93,15 @@ index 11b4c8d0..3943b646 100644
          implicitHeight: workspaceButtonWidth
  
          Repeater {
-@@ -623,6 +706,7 @@
-                 id: button
-                 property int workspaceValue: getWorkspaceId(index)
+@@ -559,6 +629,7 @@
+                 // or looks up window state.
+                 property int realWorkspaceId: inSpecialWorkspace ? specialSlotToId(workspaceValue) : workspaceValue
                  Layout.fillHeight: true
 +                Layout.preferredWidth: workspaceButtonWidth
-                 onPressed: {
-                     if (inSpecialWorkspace) {
-                         Quickshell.execDetached(["bash", "-c", "~/.config/hypr/scripts/special-workspace-nav.sh goto " + workspaceValue]);
-@@ -763,8 +847,11 @@
+                 onPressed: AxctlService.dispatch(`workspace ${realWorkspaceId}`)
+                 width: workspaceButtonWidth
+ 
+@@ -685,8 +756,11 @@
          z: 3
  
          spacing: 0
@@ -127,22 +114,22 @@ index 11b4c8d0..3943b646 100644
          implicitWidth: workspaceButtonWidth
  
          Repeater {
-@@ -774,6 +861,7 @@
-                 id: buttonVert
+@@ -697,6 +771,7 @@
                  property int workspaceValue: getWorkspaceId(index)
+                 property int realWorkspaceId: inSpecialWorkspace ? specialSlotToId(workspaceValue) : workspaceValue
                  Layout.fillWidth: true
 +                Layout.preferredHeight: workspaceButtonWidth
-                 onPressed: {
-                     if (inSpecialWorkspace) {
-                         Quickshell.execDetached(["bash", "-c", "~/.config/hypr/scripts/special-workspace-nav.sh goto " + workspaceValue]);
-@@ -907,4 +995,99 @@
+                 onPressed: AxctlService.dispatch(`workspace ${realWorkspaceId}`)
+                 height: workspaceButtonWidth
+ 
+@@ -816,4 +891,99 @@
              }
          }
      }
 +
 +    // Focused-app badge: a separate element beside the workspace buttons,
-+    // shown for the active workspace whether it's regular or special. Never
-+    // merged into the workspace number pill itself.
++    // shown for the active workspace whether it's regular or in the special
++    // group. Never merged into the workspace number pill itself.
 +    Item {
 +        id: activeAppBadge
 +        visible: opacity > 0

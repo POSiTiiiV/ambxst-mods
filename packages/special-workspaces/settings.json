@@ -10,6 +10,15 @@
       "default": "SUPER + SHIFT + V"
     },
     {
+      "key": "threshold",
+      "label": "Hidden-group threshold",
+      "description": "Real workspace numbers above this become the hidden special group (slot 1 = threshold+1, slot 2 = threshold+2, ...). Everything at or below it is a normal, visible workspace. Needs 'hyprctl reload' to apply -- triggered automatically when this is saved.",
+      "type": "integer",
+      "default": 50,
+      "minimum": 10,
+      "maximum": 500
+    },
+    {
       "key": "dynamicMode",
       "label": "Unlimited special workspaces",
       "description": "When on, the special group has no fixed size -- SUPER+Z/X and scrolling can always create one more slot past the last occupied one. Turn off to use a fixed slot count instead, which enables wraparound (last slot back to slot 1, and vice versa).",
@@ -27,8 +36,8 @@
     },
     {
       "key": "animationStyle",
-      "label": "Special-group transition animation",
-      "description": "Animation used when opening/closing the special group, and when moving between its slots.",
+      "label": "Special-group entry/exit animation",
+      "description": "Animation used only for the toggle keybind's transition into/out of the group (navigation within the group uses your normal workspace animation).",
       "type": "enum",
       "default": "fade",
       "options": [
