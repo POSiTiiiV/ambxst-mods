@@ -58,6 +58,14 @@ local function is_hidden(id)
     return id ~= nil and id > SPECIAL_THRESHOLD
 end
 
+-- A workspace only counts as "regular" (safe to remember as a return
+-- target) if it's a real, positive, non-hidden id -- excludes 0/negative
+-- ids (e.g. a leftover named workspace from something unrelated), which
+-- "not is_hidden(id)" alone wouldn't catch.
+local function is_regular(id)
+    return id ~= nil and id > 0 and id <= SPECIAL_THRESHOLD
+end
+
 -- Recover a previously-persisted last regular workspace id. Needed because
 -- `hyprctl reload` (e.g. triggered by a wallpaper change) re-executes this
 -- whole script, wiping the in-memory value even if we're currently inside
@@ -80,8 +88,18 @@ local function write_saved_regular_ws(id)
 end
 
 local last_regular_ws = read_saved_regular_ws() or 1
-local currently_hidden = false
-local allow_boundary_cross = false
+-- Single source of truth for the guard: the last workspace id we actually
+-- believe we're on. Both crossing directions compare against this
+-- directly. Updated in one of two ways: reactively, when a same-zone
+-- workspace.active event confirms it, or synchronously/preemptively by any
+-- function that deliberately crosses the boundary (see cross_boundary_to
+-- below) -- NOT via a "this crossing is pre-approved" flag consumed by a
+-- follow-up event, because a dispatch issued from inside the
+-- workspace.active handler itself doesn't reliably re-trigger a confirming
+-- event, which left such a flag stuck and let the next crossing through
+-- unchecked.
+local initial_ws = hl.get_active_workspace()
+local last_workspace_id = (initial_ws and initial_ws.id) or 1
 
 local function special_group_animation()
     if sw_settings.animationStyle == "slide" then
@@ -94,38 +112,45 @@ local function regular_group_animation()
     return { leaf = "workspaces", enabled = true, speed = 3.0, spring = "workspaceSpring", style = "slidefade 20%" }
 end
 
+local function remember_workspace(id)
+    last_workspace_id = id
+    if is_regular(id) then
+        last_regular_ws = id
+        write_saved_regular_ws(id)
+    end
+end
+
+-- Deliberately cross the boundary: updates our own bookkeeping synchronously
+-- BEFORE dispatching, so the guard below sees last_workspace_id already
+-- matching the target and never treats the resulting event as a crossing
+-- to bounce back, regardless of whether that event fires right away, late,
+-- or not at all.
+local function cross_boundary_to(target_id)
+    remember_workspace(target_id)
+    hl.dispatch(hl.dsp.focus({ workspace = target_id }))
+end
+
 -- Reactive boundary guard: swipe can't be intercepted directly (no Lua hook
 -- exists for it), so instead of preventing the crossing, we catch it right
--- after it happens and bounce back -- the only direction guarded is
--- regular -> hidden (accidentally leaving the hidden group back to regular
--- isn't a problem worth blocking).
+-- after it happens and bounce back. Both directions are guarded -- only
+-- cross_boundary_to (the toggle keybind, number-key jumps into/out of the
+-- group) may cross the boundary.
 hl.on("workspace.active", function(ws)
     if not ws or not ws.id then return end
+
+    local was_hidden = is_hidden(last_workspace_id)
     local now_hidden = is_hidden(ws.id)
 
-    if allow_boundary_cross then
-        allow_boundary_cross = false
-        currently_hidden = now_hidden
-        if not now_hidden then
-            last_regular_ws = ws.id
-            write_saved_regular_ws(ws.id)
-        end
+    if was_hidden ~= now_hidden then
+        -- Not a pre-approved crossing (cross_boundary_to would have already
+        -- updated last_workspace_id to match ws.id) -- bounce straight
+        -- back. last_workspace_id needs no update: we're returning to
+        -- exactly where it already says we were.
+        hl.dispatch(hl.dsp.focus({ workspace = last_workspace_id }))
         return
     end
 
-    if (not currently_hidden) and now_hidden then
-        -- Accidental entry (swipe/scroll/Z/X landed past the threshold) --
-        -- bounce straight back, no toggle was involved.
-        allow_boundary_cross = true
-        hl.dispatch(hl.dsp.focus({ workspace = last_regular_ws }))
-        return
-    end
-
-    currently_hidden = now_hidden
-    if not now_hidden then
-        last_regular_ws = ws.id
-        write_saved_regular_ws(ws.id)
-    end
+    remember_workspace(ws.id)
 end)
 
 -- Toggle the special group (default SUPER+SHIFT+V, configurable from
@@ -135,19 +160,17 @@ local function toggle_special_group()
     local cur = hl.get_active_workspace()
     local cur_id = cur and cur.id or 1
 
-    allow_boundary_cross = true
     if is_hidden(cur_id) then
         -- Restore the regular animation BEFORE dispatching, so the exit
         -- transition itself (and everything after) uses it.
         pcall(hl.animation, regular_group_animation())
-        hl.dispatch(hl.dsp.focus({ workspace = last_regular_ws }))
+        cross_boundary_to(last_regular_ws)
     else
-        last_regular_ws = cur_id
-        write_saved_regular_ws(cur_id)
+        remember_workspace(cur_id)
         -- Applied before dispatching, so the entry transition (and
         -- everything else while inside the group) uses it.
         pcall(hl.animation, special_group_animation())
-        hl.dispatch(hl.dsp.focus({ workspace = SPECIAL_THRESHOLD + 1 }))
+        cross_boundary_to(SPECIAL_THRESHOLD + 1)
     end
 end
 
@@ -168,8 +191,7 @@ local function number_key_nav(n)
     local cur = hl.get_active_workspace()
     local cur_id = cur and cur.id or 1
     if is_hidden(cur_id) then
-        allow_boundary_cross = true
-        hl.dispatch(hl.dsp.focus({ workspace = SPECIAL_THRESHOLD + n }))
+        cross_boundary_to(SPECIAL_THRESHOLD + n)
     else
         hl.dispatch(hl.dsp.focus({ workspace = n }))
     end

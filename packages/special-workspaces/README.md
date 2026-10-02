@@ -14,7 +14,9 @@ v4.0.0 drops that feature entirely in favor of a reserved block of **real** work
 
 ## How hiding is enforced
 
-Since slot workspaces are ordinary workspaces, nothing stops Hyprland itself from wandering into them (e.g. scrolling or swiping past your last regular workspace). This mod's Hyprland-side Lua watches every workspace change and, if you land past the threshold **any way other than the toggle keybind**, immediately bounces you back to your last regular workspace. The reverse direction (leaving the hidden group back to regular territory) isn't guarded -- that's not something worth blocking.
+Since slot workspaces are ordinary workspaces, nothing stops Hyprland itself from wandering into or out of them (e.g. scrolling or swiping past the boundary in either direction). This mod's Hyprland-side Lua watches every workspace change and, if you cross the threshold **any way other than the toggle keybind or a number-key jump**, immediately bounces you back to wherever you were. Both directions are guarded.
+
+The guard's bookkeeping is updated synchronously by whatever deliberately crosses the boundary (not by waiting for a confirming event afterward) -- a dispatch issued from inside the guard's own event handler doesn't reliably re-trigger a follow-up event in this Hyprland build, which initially let a second rapid crossing attempt slip through unchecked after the first one was bounced. Fixed by never depending on that confirmation at all.
 
 This means crossing the boundary by accident causes a brief visual flash (you'll see the hidden workspace for a split second before being bounced back) rather than being silently prevented outright -- there's no lower-level hook available to stop the transition before it happens.
 

@@ -1,5 +1,5 @@
 diff --git a/modules/bar/workspaces/Workspaces.qml b/modules/bar/workspaces/Workspaces.qml
-index a46e1af0..c5f4f050 100644
+index a46e1af0..695849b6 100644
 --- a/modules/bar/workspaces/Workspaces.qml
 +++ b/modules/bar/workspaces/Workspaces.qml
 @@ -23,15 +23,61 @@ Item {
@@ -86,29 +86,30 @@ index a46e1af0..c5f4f050 100644
          }
          const idx = dynamicWorkspaceIds.indexOf(activeWorkspaceId);
          if (idx >= 0) {
-@@ -66,12 +112,34 @@ Item {
+@@ -66,12 +112,35 @@ Item {
      property var occupiedRanges: []
  
      function updateWorkspaceOccupied() {
 +        if (inSpecialWorkspace) {
++            // Shown contiguously from slot 1 -- not sparse/occupied-only
++            // like regular dynamic workspaces -- since jumping straight to
++            // slot 3 (e.g. via SUPER+3) should reveal slots 1-3 together,
++            // not skip the empty ones in between.
++            let maxSlot;
 +            if (specialDynamicMode) {
-+                const ids = AxctlService.workspaces.values.filter(ws => ws.id > specialThreshold && CompositorData.workspaceOccupationMap[ws.id]).map(ws => ws.id - specialThreshold).sort((a, b) => a - b);
-+                if (!ids.includes(activeWorkspaceId)) {
-+                    ids.push(activeWorkspaceId);
-+                    ids.sort((a, b) => a - b);
-+                }
-+                dynamicWorkspaceIds = ids;
-+                workspaceOccupied = ids.map(slot => !!CompositorData.workspaceOccupationMap[specialSlotToId(slot)]);
++                const occupiedSlotNums = AxctlService.workspaces.values.filter(ws => ws.id > specialThreshold && CompositorData.workspaceOccupationMap[ws.id]).map(ws => ws.id - specialThreshold);
++                maxSlot = Math.max(activeWorkspaceId, 1, ...occupiedSlotNums);
 +            } else {
-+                const ids = [];
-+                const occ = [];
-+                for (let i = 1; i <= specialSlotCount; i++) {
-+                    ids.push(i);
-+                    occ.push(!!CompositorData.workspaceOccupationMap[specialSlotToId(i)]);
-+                }
-+                dynamicWorkspaceIds = ids;
-+                workspaceOccupied = occ;
++                maxSlot = specialSlotCount;
 +            }
++            const ids = [];
++            const occ = [];
++            for (let i = 1; i <= maxSlot; i++) {
++                ids.push(i);
++                occ.push(!!CompositorData.workspaceOccupationMap[specialSlotToId(i)]);
++            }
++            dynamicWorkspaceIds = ids;
++            workspaceOccupied = occ;
 +            updateOccupiedRanges();
 +            return;
 +        }
@@ -123,7 +124,7 @@ index a46e1af0..c5f4f050 100644
              if (!occupiedIds.includes(activeId)) {
                  occupiedIds.push(activeId);
                  occupiedIds.sort((a, b) => a - b);
-@@ -134,7 +202,7 @@ Item {
+@@ -134,7 +203,7 @@ Item {
      }
  
      function getWorkspaceId(index) {
@@ -132,7 +133,7 @@ index a46e1af0..c5f4f050 100644
              // Pending slot: the active workspace niri just created, not
              // yet in the refreshed dynamic list.
              if (index >= dynamicWorkspaceIds.length) {
-@@ -184,6 +252,22 @@ Item {
+@@ -184,6 +253,22 @@ Item {
          updateTimer.restart();
      }
  
@@ -155,7 +156,7 @@ index a46e1af0..c5f4f050 100644
      implicitWidth: orientation === "vertical" ? baseSize : workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2
      implicitHeight: orientation === "vertical" ? workspaceButtonSize * effectiveWorkspaceCount + widgetPadding * 2 : baseSize
  
-@@ -326,9 +410,18 @@ Item {
+@@ -326,9 +411,18 @@ Item {
      // Horizontal active workspace highlight
      StyledRect {
          id: activeHighlightH
@@ -175,7 +176,7 @@ index a46e1af0..c5f4f050 100644
          property real activeWorkspaceMargin: 4
          // Two animated indices to create a stretchy transition effect
          property real idx1: workspaceIndexInGroup
-@@ -382,9 +475,18 @@ Item {
+@@ -382,9 +476,18 @@ Item {
      // Vertical active workspace highlight
      StyledRect {
          id: activeHighlightV
@@ -195,7 +196,7 @@ index a46e1af0..c5f4f050 100644
          property real activeWorkspaceMargin: 4
          // Two animated indices to create a stretchy transition effect
          property real idx1: workspaceIndexInGroup
-@@ -451,8 +553,13 @@ Item {
+@@ -451,8 +554,13 @@ Item {
              Button {
                  id: button
                  property int workspaceValue: getWorkspaceId(index)
@@ -210,7 +211,7 @@ index a46e1af0..c5f4f050 100644
                  width: workspaceButtonWidth
  
                  background: Item {
-@@ -460,7 +567,7 @@ Item {
+@@ -460,7 +568,7 @@ Item {
                      implicitWidth: workspaceButtonWidth
                      implicitHeight: workspaceButtonWidth
                      property var focusedWindow: {
@@ -219,7 +220,7 @@ index a46e1af0..c5f4f050 100644
                          if (windowsInThisWorkspace.length === 0)
                              return null;
                          // Get the window with the lowest focusHistoryID (most recently focused)
-@@ -489,7 +596,7 @@ Item {
+@@ -489,7 +597,7 @@ Item {
                          font.pixelSize: workspaceLabelFontSize(text)
                          text: `${button.workspaceValue}`
                          elide: Text.ElideRight
@@ -228,7 +229,7 @@ index a46e1af0..c5f4f050 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -500,13 +607,13 @@ Item {
+@@ -500,13 +608,13 @@ Item {
                          }
                      }
                      Rectangle {
@@ -244,7 +245,7 @@ index a46e1af0..c5f4f050 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -588,8 +695,9 @@ Item {
+@@ -588,8 +696,9 @@ Item {
              Button {
                  id: buttonVert
                  property int workspaceValue: getWorkspaceId(index)
@@ -255,7 +256,7 @@ index a46e1af0..c5f4f050 100644
                  height: workspaceButtonWidth
  
                  background: Item {
-@@ -597,7 +705,7 @@ Item {
+@@ -597,7 +706,7 @@ Item {
                      implicitWidth: workspaceButtonWidth
                      implicitHeight: workspaceButtonWidth
                      property var focusedWindow: {
@@ -264,7 +265,7 @@ index a46e1af0..c5f4f050 100644
                          if (windowsInThisWorkspace.length === 0)
                              return null;
                          // Get the window with the lowest focusHistoryID (most recently focused)
-@@ -626,7 +734,7 @@ Item {
+@@ -626,7 +735,7 @@ Item {
                          font.pixelSize: workspaceLabelFontSize(text)
                          text: `${buttonVert.workspaceValue}`
                          elide: Text.ElideRight
@@ -273,7 +274,7 @@ index a46e1af0..c5f4f050 100644
  
                          Behavior on opacity {
                              enabled: Config.animDuration > 0
-@@ -637,13 +745,13 @@ Item {
+@@ -637,13 +746,13 @@ Item {
                          }
                      }
                      Rectangle {
