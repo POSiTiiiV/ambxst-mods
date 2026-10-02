@@ -18,6 +18,8 @@ Since slot workspaces are ordinary workspaces, nothing stops Hyprland itself fro
 
 The guard's bookkeeping is updated synchronously by whatever deliberately crosses the boundary (not by waiting for a confirming event afterward) -- a dispatch issued from inside the guard's own event handler doesn't reliably re-trigger a follow-up event in this Hyprland build, which initially let a second rapid crossing attempt slip through unchecked after the first one was bounced. Fixed by never depending on that confirmation at all.
 
+The animated slide into the forbidden workspace itself can't be suppressed -- this guard only runs after Hyprland has already started that transition, with no earlier hook available to stop it before it begins. The snap back doesn't get its own animation layered on top, though: it's instant, with your normal animation restored immediately after.
+
 This means crossing the boundary by accident causes a brief visual flash (you'll see the hidden workspace for a split second before being bounced back) rather than being silently prevented outright -- there's no lower-level hook available to stop the transition before it happens.
 
 ## What this mod provides

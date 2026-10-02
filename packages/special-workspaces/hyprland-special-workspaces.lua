@@ -112,6 +112,12 @@ local function regular_group_animation()
     return { leaf = "workspaces", enabled = true, speed = 3.0, spring = "workspaceSpring", style = "slidefade 20%" }
 end
 
+-- Applies whichever animation belongs to the zone a given workspace id is
+-- in (used to restore the right one after a bounce-back's instant snap).
+local function apply_zone_animation(id)
+    pcall(hl.animation, is_hidden(id) and special_group_animation() or regular_group_animation())
+end
+
 local function remember_workspace(id)
     last_workspace_id = id
     if is_regular(id) then
@@ -145,8 +151,15 @@ hl.on("workspace.active", function(ws)
         -- Not a pre-approved crossing (cross_boundary_to would have already
         -- updated last_workspace_id to match ws.id) -- bounce straight
         -- back. last_workspace_id needs no update: we're returning to
-        -- exactly where it already says we were.
+        -- exactly where it already says we were. The initial animated
+        -- slide into the forbidden workspace can't be prevented (this
+        -- handler only runs after Hyprland already started it, with no
+        -- earlier hook available), but the snap back doesn't need its own
+        -- animation layered on top -- disabled just for this one dispatch,
+        -- then restored to whichever zone we land back in.
+        pcall(hl.animation, { leaf = "workspaces", enabled = false })
         hl.dispatch(hl.dsp.focus({ workspace = last_workspace_id }))
+        apply_zone_animation(last_workspace_id)
         return
     end
 
