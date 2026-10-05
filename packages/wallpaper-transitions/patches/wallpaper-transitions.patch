@@ -456,10 +456,9 @@ index 66cbd27d..4886cc80 100644
                          visible: (root.selectedMod?.error ?? "") !== ""
                              || (root.selectedMod?.compatibilityError ?? "") !== ""
 diff --git a/modules/widgets/dashboard/wallpapers/VideoWallpaper.qml b/modules/widgets/dashboard/wallpapers/VideoWallpaper.qml
-index 5b466f05..cce36392 100644
 --- a/modules/widgets/dashboard/wallpapers/VideoWallpaper.qml
 +++ b/modules/widgets/dashboard/wallpapers/VideoWallpaper.qml
-@@ -11,18 +11,46 @@ Item {
+@@ -14,6 +14,16 @@
      signal requestVideoSync
  
      readonly property real positionMs: player.position
@@ -467,28 +466,26 @@ index 5b466f05..cce36392 100644
 +    signal firstFrameReady
 +    property bool paused: false
 +
-+    onPausedChanged: {
-+        if (paused) {
-+            if (player.playbackState === MediaPlayer.PlayingState) {
-+                player.pause();
-+            }
-+        } else {
-+            if (player.playbackState === MediaPlayer.PausedState) {
-+                player.play();
-+            }
-+        }
-+    }
-+
 +    onPositionMsChanged: {
 +        if (positionMs > 0 && !hasFirstFrame) {
 +            hasFirstFrame = true;
 +            firstFrameReady();
 +        }
 +    }
+     readonly property var screenMonitor: AxctlService.monitorFor(screenName)
+     readonly property bool screenHasFullscreen: {
+         if (!screenMonitor)
+@@ -25,17 +35,19 @@
+         && screenMonitor !== null
+         && AxctlService.focusedMonitor
+         && AxctlService.focusedMonitor.id === screenMonitor.id
+-    readonly property bool shouldPausePlayback: Config.performance.pauseWallpapersOnFullscreen && (screenHasFullscreen || gameModeOnScreen)
++    readonly property bool shouldPausePlayback: paused || (Config.performance.pauseWallpapersOnFullscreen && (screenHasFullscreen || gameModeOnScreen))
  
      readonly property var optimizedPalette: ["background", "overBackground", "shadow", "surface", "surfaceBright", "surfaceDim", "surfaceContainer", "surfaceContainerHigh", "surfaceContainerHighest", "surfaceContainerLow", "surfaceContainerLowest", "primary", "secondary", "tertiary", "red", "lightRed", "green", "lightGreen", "blue", "lightBlue", "yellow", "lightYellow", "cyan", "lightCyan", "magenta", "lightMagenta"]
  
      onSourceFileChanged: restartPlayback()
+     onShouldPausePlaybackChanged: updatePlayback()
      Component.onCompleted: restartPlayback()
 +    Component.onDestruction: player.stop()
  
@@ -498,16 +495,8 @@ index 5b466f05..cce36392 100644
 +        hasFirstFrame = false;
          player.stop();
          player.source = "file://" + sourceFile;
--        player.play();
-+        if (paused) {
-+            player.pause();
-+        } else {
-+            player.play();
-+        }
          syncDebounce.restart();
-     }
- 
-@@ -92,13 +120,24 @@ Item {
+@@ -120,6 +132,17 @@
              vertexShader: "palette.vert.qsb"
              fragmentShader: "palette.frag.qsb"
          }
@@ -525,14 +514,6 @@ index 5b466f05..cce36392 100644
      }
  
      Connections {
-         target: GlobalStates
-         function onVideoSyncTickChanged() {
-             player.seek(0);
--            if (player.playbackState !== MediaPlayer.PlayingState)
-+            if (!videoWallpaper.paused && player.playbackState !== MediaPlayer.PlayingState)
-                 player.play();
-         }
-     }
 diff --git a/modules/widgets/dashboard/wallpapers/Wallpaper.qml b/modules/widgets/dashboard/wallpapers/Wallpaper.qml
 index 099acb04..abdc2897 100644
 --- a/modules/widgets/dashboard/wallpapers/Wallpaper.qml

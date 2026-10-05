@@ -450,6 +450,7 @@ Item {
                     VideoWallpaper {
                         id: videoWallpaperChild
                         sourceFile: layerRoot.imageSource.replace(/^file:\/\//, "")
+                        screenName: root.currentScreenName
                         tint: root.tintEnabled
                         paused: root.shouldPauseLiveWallpaper
                         onRequestVideoSync: {
