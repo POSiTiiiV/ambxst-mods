@@ -725,7 +725,8 @@ Item {
             circleAnim.duration = dur;
             circleAnim.easing.type = easing;
 
-            animCircle.start();
+            // Yield one frame for FBO allocation before the animation loop begins
+            Qt.callLater(function() { if (root.isTransitioning) animCircle.start(); });
         } else if (transitionStyle === "circleIn") {
             // Circle Shrink: outgoing shrinks down to center revealing incoming underneath
             fromSlot.z = 1;
@@ -744,7 +745,8 @@ Item {
             circleAnim.duration = dur;
             circleAnim.easing.type = easing;
 
-            animCircle.start();
+            // Yield one frame for FBO allocation before the animation loop begins
+            Qt.callLater(function() { if (root.isTransitioning) animCircle.start(); });
         } else if (transitionStyle === "slideLeft") {
             toSlot.z = 1;
             fromSlot.z = 0;
