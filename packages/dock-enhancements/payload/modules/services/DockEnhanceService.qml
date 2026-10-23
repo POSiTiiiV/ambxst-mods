@@ -12,6 +12,13 @@ Singleton {
     property bool hideForFloating: Config.dock?.hideForFloating ?? true
     property bool loaded: false
 
+    // This singleton is first touched from inside DockContent's bindings,
+    // while the shell is still building its panels. Pulling ModsService in
+    // at that moment (Connections target / getSettings) crashes Quickshell
+    // inside QV4::Runtime::IteratorNext a few seconds later (Qt 6.12), so
+    // ModsService is only touched once start-up has settled.
+    property bool ready: false
+
     function applyValues(values) {
         if (!values) return;
         if (values.hideForFloating !== undefined) root.hideForFloating = !!values.hideForFloating;
@@ -26,8 +33,17 @@ Singleton {
         });
     }
 
+    Timer {
+        interval: 3000
+        running: true
+        onTriggered: {
+            root.ready = true;
+            root.load();
+        }
+    }
+
     Connections {
-        target: ModsService
+        target: root.ready ? ModsService : null
         function onSettingChanged(modId, key, value) {
             if (modId !== root.modId) return;
             const values = {};
@@ -35,6 +51,4 @@ Singleton {
             root.applyValues(values);
         }
     }
-
-    Component.onCompleted: load()
 }
