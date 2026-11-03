@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Axenide/Ambxst/dev/docs/mods/manifest.schema.json",
+  "manifestVersion": 1,
+  "id": "positive.ambxst-kpopping",
+  "name": "Kpopping Online Wallpapers",
+  "version": "1.2.0",
+  "description": "Search K-pop idols and groups on kpopping.com from the Wallpapers tab, filtered by orientation and resolution (SD to 8K) with the same chips as your local filters. Try a photo on the real desktop first, then keep or discard it. Kept photos are saved as <wallpaper dir>/kpopping/<Group>/<Idol>/<Idol>_<date>_<id>.jpg (group shots in <Group>/mix) and applied the normal way (matugen colours, skwd-wall transition). Searches, album sizes and thumbnails are cached. Also keeps the picker's thumbnails loaded while the dashboard is closed, so it reopens without reloading them.",
+  "license": "MIT",
+  "author": "POSiTiiiV",
+  "authorUrl": "https://github.com/POSiTiiiV",
+  "homepage": "https://github.com/POSiTiiiV/ambxst-mods/tree/main/packages/ambxst-kpopping",
+  "compatibility": {
+    "api": 1,
+    "ambxst": ">=1.3.12 <2.0.0",
+    "testedBaseCommits": [
+      "83e8462a6b03d4a7d428d5c7365e4ec03f3b63a9"
+    ]
+  },
+  "dependencies": [
+    "drpezzer.ambxst-skwd-wall"
+  ],
+  "conflicts": [],
+  "commands": [
+    "python3",
+    "sh",
+    "curl"
+  ],
+  "permissions": [
+    "Queries kpopping.com's public API (no login, no cookies) when you search in Kpopping mode",
+    "Downloads thumbnails (via kpopping.com's image resizer) and full-size photos (from its Cloudflare R2 bucket) into ~/.cache/ambxst/kpopping; thumbnails unused for 30 days and previews older than 7 days are deleted, except a preview that is still your wallpaper",
+    "Copies the photo you pick into <wallpaper dir>/kpopping/",
+    "Desktop previews set the cached photo as your wallpaper (colours included) until you keep or discard it"
+  ],
+  "operations": [
+    {
+      "type": "overlay",
+      "source": "payload/modules/services/KpoppingService.qml",
+      "target": "modules/services/KpoppingService.qml"
+    },
+    {
+      "type": "overlay",
+      "source": "payload/scripts/kpopping_bridge.py",
+      "target": "scripts/kpopping_bridge.py"
+    },
+    {
+      "type": "patch",
+      "source": "patches/kpopping-tab.patch"
+    }
+  ]
+}
