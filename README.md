@@ -15,6 +15,7 @@ Each package has its own README with full details, screenshots, and install inst
 | [`special-workspaces`](packages/special-workspaces) | Special Workspaces | `v4.0.0` | A hidden group of real regular workspaces reserved above a configurable threshold, toggled with one keybind — SUPER+Z/X, scroll, swipe, and click all navigate it natively, no special-casing needed. No longer requires `drpezzer.roadie`. |
 | [`workspace-app-indicator`](packages/workspace-app-indicator) | Workspace App Indicator | `v1.0.0` | Shows the focused app's icon + name in a separate badge beside the workspace row — works for both regular and special workspaces. Depends on `special-workspaces`. |
 | [`theme-sync`](packages/theme-sync) | Theme Sync | `v1.0.1` | Live-syncs the wallpaper's Material You palette to Kitty, btop, Starship, Fastfetch, Spicetify, Fuzzel, Sonora and Dolphin — never overwrites anything beyond colors — with per-app toggles and configurable Dolphin opacity/blur. Needs one companion script — see its README. |
+| [`ambxst-kpopping`](packages/ambxst-kpopping) | Kpopping Online Wallpapers | `v1.2.0` | Search K-pop idols and groups on kpopping.com from the Wallpapers tab, filter by orientation and resolution (SD–8K), preview on the real desktop, then save into your library as `kpopping/<Group>/<Idol>/`. Cached, no login. Also makes the wallpaper picker reopen faster. **Requires `drpezzer.ambxst-skwd-wall`.** |
 
 ---
 
@@ -30,7 +31,7 @@ ambxst reload
 
 Or via the GUI: **Ambxst Settings → Mods → Package source**, paste the package URL, click **Install**, then enable it in the list.
 
-Packages with dependencies (`special-workspaces`, `workspace-app-indicator`) will ask Ambxst to also install those — see each package's own README for the exact chain and any extra manual steps (Hyprland config snippets, companion scripts) they need.
+Packages with dependencies (`special-workspaces`, `workspace-app-indicator`, `ambxst-kpopping`) will ask Ambxst to also install those — see each package's own README for the exact chain and any extra manual steps (Hyprland config snippets, companion scripts) they need.
 
 ---
 
@@ -47,7 +48,8 @@ ambxst-mods/
     ├── dock-enhancements/
     ├── special-workspaces/
     ├── workspace-app-indicator/
-    └── theme-sync/
+    ├── theme-sync/
+    └── ambxst-kpopping/
         ├── ambxst.mod.json
         ├── README.md
         ├── LICENSE
