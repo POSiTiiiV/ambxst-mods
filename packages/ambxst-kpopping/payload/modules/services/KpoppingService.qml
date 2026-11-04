@@ -313,12 +313,18 @@ Singleton {
     function preview(src, screenName) {
         if (!src || fetcher.running || !bySrc[src])
             return;
-        if (!previewing && !previewPending) {
+        if (!previewing && !previewPending)
             _revertPath = _current(screenName);   // what ✗ goes back to
-            _returnWorkspace = _workspace();
-            _previewWorkspace = _emptyWorkspace();
-            if (_previewWorkspace > 0 && _previewWorkspace !== _returnWorkspace)
-                AxctlService.dispatch("workspace " + _previewWorkspace);
+        // every preview, not just the first: you may have gone back to your windows meanwhile
+        const here = _workspace();
+        const empty = _emptyWorkspace();
+        if (empty > 0 && empty !== here) {
+            _returnWorkspace = here;
+            _previewWorkspace = empty;
+            AxctlService.dispatch("workspace " + empty);
+        } else if (here !== _previewWorkspace) {
+            _returnWorkspace = -1;   // already on an empty workspace of your own: stay there after
+            _previewWorkspace = -1;
         }
         Visibilities.setActiveModule("");      // out of the way: the desktop is the preview
         previewSrc = src;
@@ -369,7 +375,9 @@ Singleton {
         return mon && mon.activeWorkspace ? mon.activeWorkspace.id : -1;
     }
 
-    // the current workspace if it has no windows, else the lowest-numbered empty one
+    // The current workspace if it has no windows, else the lowest-numbered empty one on the
+    // same side of positive.special-workspaces' threshold: its Hyprland boundary guard
+    // bounces any switch across it straight back (from 51 to 6 lands you on 51 again).
     function _emptyWorkspace() {
         const used = {};
         for (const c of AxctlService.clients.values || [])
@@ -378,10 +386,25 @@ Singleton {
         const current = _workspace();
         if (current > 0 && !used[current])
             return current;
-        let n = 1;
+        let n = current > _threshold ? _threshold + 1 : 1;
         while (used[n])
             n++;
         return n;
+    }
+
+    property int _threshold: 50   // positive.special-workspaces' default
+    FileView {
+        path: Quickshell.env("HOME") + "/.config/ambxst/mods/positive.special-workspaces.json"
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                const t = parseInt(JSON.parse(text()).threshold);
+                if (t > 0)
+                    root._threshold = t;
+            } catch (e) {}
+        }
     }
 
     function _current(screenName) {
