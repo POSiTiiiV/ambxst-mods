@@ -3,8 +3,8 @@
   "manifestVersion": 1,
   "id": "positive.ambxst-kpopping",
   "name": "Kpopping Online Wallpapers",
-  "version": "1.2.0",
-  "description": "Search K-pop idols and groups on kpopping.com from the Wallpapers tab, filtered by orientation and resolution (SD to 8K) with the same chips as your local filters. Try a photo on the real desktop first, then keep or discard it. Kept photos are saved as <wallpaper dir>/kpopping/<Group>/<Idol>/<Idol>_<date>_<id>.jpg (group shots in <Group>/mix) and applied the normal way (matugen colours, skwd-wall transition). Searches, album sizes and thumbnails are cached. Also keeps the picker's thumbnails loaded while the dashboard is closed, so it reopens without reloading them.",
+  "version": "1.3.2",
+  "description": "Search K-pop idols and groups on kpopping.com from the Wallpapers tab: ranked name matches with one-click alternatives, recent searches, infinite scroll through every post, Hot / Newest / Most liked order, and orientation/resolution (SD-8K) filter chips. Clicking a photo previews it on an empty workspace; keep or drop it from the notch. Kept photos are saved as <wallpaper dir>/kpopping/<Group>/<Idol>/<Idol>_<date>_<id>.jpg. Also adds a Wallpaper fit setting for skwd-wall (Auto shows portrait wallpapers whole on a blurred backdrop) and makes the picker reopen faster.",
   "license": "MIT",
   "author": "POSiTiiiV",
   "authorUrl": "https://github.com/POSiTiiiV",
@@ -29,7 +29,8 @@
     "Queries kpopping.com's public API (no login, no cookies) when you search in Kpopping mode",
     "Downloads thumbnails (via kpopping.com's image resizer) and full-size photos (from its Cloudflare R2 bucket) into ~/.cache/ambxst/kpopping; thumbnails unused for 30 days and previews older than 7 days are deleted, except a preview that is still your wallpaper",
     "Copies the photo you pick into <wallpaper dir>/kpopping/",
-    "Desktop previews set the cached photo as your wallpaper (colours included) until you keep or discard it"
+    "Desktop previews close the dashboard, switch to an empty workspace and set the cached photo as your wallpaper (colours included) until you keep or drop it from the notch",
+    "Writes display.fillMode / display.backgroundMode in skwd-wall's ~/.config/skwd-wall-v2/config.json before each wallpaper change (the Wallpaper fit setting; 'Leave it to skwd-wall' turns this off)"
   ],
   "operations": [
     {
@@ -46,5 +47,8 @@
       "type": "patch",
       "source": "patches/kpopping-tab.patch"
     }
-  ]
+  ],
+  "settings": {
+    "schema": "settings.json"
+  }
 }
