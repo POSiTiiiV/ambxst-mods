@@ -60,6 +60,7 @@ Press **▶** at the end of the top row, then search, or paste a YouTube video o
    - **A search result:** with **Autoplay** on, YouTube's Mix of related videos (like YouTube's own autoplay); off, it repeats.
 
 Lists loop when they reach the end.
+- Nothing is saved: the pipe is a ~64 KB kernel buffer, and mpv buffers a little ahead in RAM.
 - The video streams through mpvpaper on the layer just above skwd-wall. YouTube refuses mpv's own stream fetches (HTTP 403), so yt-dlp downloads each video straight into a pipe the player reads. Nothing is saved to disk. A video starts after ~5–10 s.
 - The player runs on its own, so `ambxst reload` doesn't stop it. Choosing any other wallpaper does (picker, kpopping preview, rotation), and so does **stop** in the notch.
 - In per-screen mode it plays on that screen, otherwise on all of them.
@@ -102,7 +103,7 @@ kpopping's API takes 0.5–3 s per request, and a search needs about 30 of them.
 | Name lookups and pages of posts | 6 hours; changing filters reuses them |
 | Idols' groups, recent searches | kept |
 | Album sizes | per post, until the album gets new photos |
-| Thumbnails (~15 KB each, via kpopping's own resizer) | until unused for 30 days |
+| Thumbnails (~15 KB each, via kpopping's own resizer; full-size originals it hands back for older photos are shrunk with ffmpeg) | until unused for 30 days |
 | Full-size previews | 7 days, never while still your wallpaper; saving a previewed photo just copies it |
 
 ## Wallpaper fit (Settings → Mods → Kpopping Online Wallpapers)

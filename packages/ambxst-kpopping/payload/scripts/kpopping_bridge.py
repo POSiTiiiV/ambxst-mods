@@ -38,7 +38,8 @@ fit: writes skwd-wall's display.fillMode / display.backgroundMode before an appl
   auto = landscape images fill the screen, portrait and square ones are shown whole.
 
 Caches in ~/.cache/ambxst/kpopping: name lookups and post pages (6 h), album sizes (per post,
-until the album grows), idols' groups, and thumbnails (pruned after 30 days unused). The shell
+until the album grows), idols' groups, and thumbnails (384 px, shrunk with ffmpeg when kpopping's
+resizer hands back a full-size original; pruned after 30 days unused). The shell
 puts full-size previews in full/ (pruned after 7 days unless one is still your wallpaper).
 Stdlib only, public API, no cookies.
 """
@@ -274,6 +275,9 @@ def thumb_file(src):
     return CACHE / "thumbs" / src.rsplit("/", 1)[-1]
 
 
+THUMB_MAX = 200_000  # resized thumbnails are ~15 KB
+
+
 def fetch_thumb(src):
     f = thumb_file(src)
     try:
@@ -281,6 +285,17 @@ def fetch_thumb(src):
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_name(f.name + ".part")
         tmp.write_bytes(data)
+        # older photos (kpopping.com/documents/...) get redirected to the full-size original,
+        # up to several MB: shrink those, never cache them as they are
+        if len(data) > THUMB_MAX:
+            small = f.with_name(f.name + ".small.jpg")
+            run = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(tmp), "-vf", "scale=384:-2", "-q:v", "5", str(small)],
+                                 capture_output=True, timeout=30)
+            tmp.unlink(missing_ok=True)
+            if run.returncode != 0 or not small.exists() or small.stat().st_size > THUMB_MAX:
+                small.unlink(missing_ok=True)
+                return src, src
+            tmp = small
         tmp.replace(f)
         return src, f.as_uri()
     except Exception:
