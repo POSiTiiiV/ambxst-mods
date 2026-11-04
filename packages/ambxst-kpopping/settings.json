@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Axenide/Ambxst/dev/docs/mods/settings.schema.json",
+  "version": 1,
+  "fields": [
+    {
+      "key": "fitMode",
+      "label": "Wallpaper fit",
+      "description": "How skwd-wall puts every wallpaper on the screen (applies to all wallpapers, not only kpopping ones). Auto fills the screen with landscape images and shows portrait or square ones whole.",
+      "type": "enum",
+      "default": "auto",
+      "options": [
+        { "label": "Auto (portrait shown whole)", "value": "auto" },
+        { "label": "Fill (crop to the screen)", "value": "fill" },
+        { "label": "Fit (whole image)", "value": "fit" },
+        { "label": "Stretch", "value": "stretch" },
+        { "label": "Center (original size)", "value": "center" },
+        { "label": "Tile", "value": "tile" },
+        { "label": "Leave it to skwd-wall", "value": "skwd" }
+      ]
+    },
+    {
+      "key": "fitBackground",
+      "label": "Around a fitted image",
+      "description": "What fills the bars beside a wallpaper that doesn't cover the whole screen (Fit, Center, Auto's portrait images).",
+      "type": "enum",
+      "default": "blur",
+      "options": [
+        { "label": "Blurred copy of the image", "value": "blur" },
+        { "label": "Solid colour (skwd-wall's fill colour)", "value": "color" }
+      ]
+    }
+  ]
+}

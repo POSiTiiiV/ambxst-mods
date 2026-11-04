@@ -1,5 +1,24 @@
+diff --git a/modules/services/SkwdWall.qml b/modules/services/SkwdWall.qml
+index 02ff394..527f076 100644
+--- a/modules/services/SkwdWall.qml
++++ b/modules/services/SkwdWall.qml
+@@ -190,8 +190,13 @@ Singleton {
+     }
+     onShownChanged: syncDebounce.restart()
+ 
+-    // skwd-helm apply, making the tinted copy first when it does not exist yet.
++    // positive.ambxst-kpopping: sets skwd's fill mode for this image first (Wallpaper fit setting)
+     function applyCommand(file, output) {
++        return KpoppingService.withFit(file, skwdApplyCommand(file, output));
++    }
++
++    // skwd-helm apply, making the tinted copy first when it does not exist yet.
++    function skwdApplyCommand(file, output) {
+         const src = tintSources[file];
+         if (!src)
+             return output ? [root.helm, "apply", file, "-o", output] : [root.helm, "apply", file];
 diff --git a/modules/widgets/dashboard/wallpapers/FilterBar.qml b/modules/widgets/dashboard/wallpapers/FilterBar.qml
-index b60e100..07bf187 100644
+index b60e100..2846625 100644
 --- a/modules/widgets/dashboard/wallpapers/FilterBar.qml
 +++ b/modules/widgets/dashboard/wallpapers/FilterBar.qml
 @@ -176,6 +176,19 @@ FocusScope {
@@ -22,7 +41,7 @@ index b60e100..07bf187 100644
              // Limpiar filtros de subcarpetas existentes
              for (var i = filterModel.count - 1; i >= 3; i--) {
                  filterModel.remove(i);
-@@ -207,6 +220,13 @@ FocusScope {
+@@ -207,6 +220,17 @@ FocusScope {
              flickable.updateFilters();
          }
  
@@ -31,13 +50,17 @@ index b60e100..07bf187 100644
 +            function onActiveChanged() {
 +                flickable.updateFilters();
 +            }
++            function onFilterChipsChanged() {
++                if (KpoppingService.active)
++                    flickable.updateFilters();
++            }
 +        }
 +
          // Actualizar filtros cuando cambie el directorio de wallpapers
          Connections {
              target: GlobalStates.wallpaperManager
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index f914730..4e265c6 100644
+index f914730..b036260 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -14,7 +14,7 @@ FocusScope {
@@ -85,10 +108,10 @@ index f914730..4e265c6 100644
                      Visibilities.setActiveModule("");
                  }
  
-+                // positive.ambxst-kpopping: Shift+Enter previews the selected photo on the desktop, Ctrl+R discards it
++                // positive.ambxst-kpopping: Enter previews on the desktop, Shift+Enter saves straight away, Ctrl+R drops the preview
 +                onShiftAccepted: {
 +                    if (KpoppingService.active && selectedIndex >= 0 && selectedIndex < filteredWallpapers.length)
-+                        KpoppingService.preview(filteredWallpapers[selectedIndex], isPerScreen ? currentScreenName : "");
++                        KpoppingService.apply(filteredWallpapers[selectedIndex], isPerScreen ? currentScreenName : "");
 +                }
 +                onCtrlRPressed: KpoppingService.discardPreview()
 +
@@ -101,7 +124,7 @@ index f914730..4e265c6 100644
                          let selectedWallpaper = filteredWallpapers[selectedIndex];
 -                        if (selectedWallpaper && GlobalStates.wallpaperManager) {
 +                        if (KpoppingService.active) {
-+                            KpoppingService.apply(selectedWallpaper, isPerScreen ? currentScreenName : "");
++                            KpoppingService.preview(selectedWallpaper, isPerScreen ? currentScreenName : "");
 +                        } else if (selectedWallpaper && GlobalStates.wallpaperManager) {
                              if (isPerScreen && currentScreenName !== "") {
                                  GlobalStates.wallpaperManager.setWallpaper(selectedWallpaper, currentScreenName);
@@ -203,7 +226,7 @@ index f914730..4e265c6 100644
              // Scheme Selector a la derecha
              Item {
                  visible: false
-@@ -1090,10 +1200,13 @@ FocusScope {
+@@ -1090,10 +1200,25 @@ FocusScope {
                  id: wallpapersFilterBar
                  anchors.horizontalCenter: parent.horizontalCenter
                  width: Math.min(implicitWidth, parent.width)
@@ -216,10 +239,22 @@ index f914730..4e265c6 100644
 +                        KpoppingService.filters = activeFilters;
 +                    else
 +                        wallpapersTabRoot.activeFilters = activeFilters;
++                }
++
++                Connections {
++                    target: KpoppingService
++                    function onFiltersChanged() {
++                        if (KpoppingService.active && JSON.stringify(wallpapersFilterBar.activeFilters) !== JSON.stringify(KpoppingService.filters))
++                            wallpapersFilterBar.activeFilters = KpoppingService.filters;
++                    }
++                    function onQueryRequested(query) {
++                        wallpapersTabRoot.searchText = query;
++                        wallpapersTabRoot.focusSearch();
++                    }
                  }
  
                  onEscapePressedOnFilters: {
-@@ -1124,6 +1237,67 @@ FocusScope {
+@@ -1124,6 +1249,42 @@ FocusScope {
              readonly property real gridWidth: width + (wallpapersTabRoot.wallpaperMargin * 2)
              readonly property real cellSize: gridWidth / wallpapersTabRoot.gridColumns
  
@@ -231,74 +266,76 @@ index f914730..4e265c6 100644
 +                horizontalAlignment: Text.AlignHCenter
 +                wrapMode: Text.Wrap
 +                visible: KpoppingService.active && (filteredWallpapers.length === 0 || KpoppingService.error !== "")
-+                text: KpoppingService.searching ? "Searching kpopping.com…" + (KpoppingService.progress ? "  (" + KpoppingService.progress + " albums)" : "") : KpoppingService.error !== "" ? KpoppingService.error : searchText.trim() === "" ? "Type an idol or group name" : "No photos match these filters"
++                text: KpoppingService.searching ? "Searching kpopping.com…" + (KpoppingService.progress ? "  (" + KpoppingService.progress + " albums)" : "") : KpoppingService.error !== "" ? KpoppingService.error : searchText.trim() === "" ? "Type an idol or group name" + (KpoppingService.recent.length ? ", or pick a recent search below the box" : "") : "No photos match these filters" + (KpoppingService.hasMore ? " yet — scroll down or wait for more" : "")
 +                color: KpoppingService.error !== "" ? Colors.error : Colors.overSurfaceVariant
 +                font.family: Config.theme.font
 +                font.pixelSize: Config.theme.fontSize
 +            }
 +
-+            // positive.ambxst-kpopping: a photo is being previewed on the desktop — keep or drop it
++            // positive.ambxst-kpopping: more pages loading at the bottom of the grid
 +            Rectangle {
-+                anchors.left: parent.left
-+                anchors.right: parent.right
++                anchors.horizontalCenter: parent.horizontalCenter
 +                anchors.bottom: parent.bottom
-+                height: 48
++                anchors.bottomMargin: 8
 +                z: 50
-+                radius: Styling.radius(4)
++                width: moreText.implicitWidth + 24
++                height: 32
++                radius: height / 2
 +                color: Colors.surface
-+                visible: KpoppingService.previewing
++                visible: KpoppingService.active && KpoppingService.searching && filteredWallpapers.length > 0
 +
-+                RowLayout {
-+                    anchors.fill: parent
-+                    anchors.leftMargin: 12
-+                    anchors.rightMargin: 6
-+                    spacing: 6
-+
-+                    Text {
-+                        Layout.fillWidth: true
-+                        elide: Text.ElideRight
-+                        readonly property var photo: KpoppingService.previewPhoto
-+                        text: "Previewing on desktop" + (photo ? " · " + photo.width + "×" + photo.height + " · " + photo.title : "")
-+                        color: Colors.overSurface
-+                        font.family: Config.theme.font
-+                        font.pixelSize: Config.theme.fontSize
-+                        font.weight: Font.Bold
-+                    }
-+
-+                    ToggleButton {
-+                        radius: Styling.radius(4)
-+                        buttonIcon: Icons.accept
-+                        tooltipText: "Save to Wallpapers (or Enter on the photo)"
-+                        onToggle: function () { KpoppingService.savePreview(); }
-+                    }
-+
-+                    ToggleButton {
-+                        radius: Styling.radius(4)
-+                        buttonIcon: Icons.cancel
-+                        tooltipText: "Discard, back to the previous wallpaper (Ctrl+R)"
-+                        onToggle: function () {
-+                            KpoppingService.discardPreview();
-+                            wallpapersTabRoot.focusSearch();
-+                        }
-+                    }
++                Text {
++                    id: moreText
++                    anchors.centerIn: parent
++                    text: "Loading more…" + (KpoppingService.progress ? "  " + KpoppingService.progress + " albums" : "")
++                    color: Colors.overSurface
++                    font.family: Config.theme.font
++                    font.pixelSize: Config.theme.fontSize
 +                }
 +            }
 +
              GridView {
                  id: wallpaperGrid
                  anchors.fill: parent
-@@ -1239,6 +1413,10 @@ FocusScope {
+@@ -1151,6 +1312,26 @@ FocusScope {
+                 flickDeceleration: 5000
+                 maximumFlickVelocity: 8000
+ 
++                // positive.ambxst-kpopping: the next page loads near the end; a new page keeps the scroll position
++                property real kpSavedY: 0
++                onContentYChanged: {
++                    if (!KpoppingService.appending)
++                        kpSavedY = contentY;
++                    if (KpoppingService.active && contentHeight > height && contentY + height > contentHeight - cellHeight * 2)
++                        KpoppingService.loadMore();
++                }
++                Connections {
++                    target: KpoppingService
++                    function onPhotosChanged() {
++                        if (!KpoppingService.appending)
++                            return;
++                        Qt.callLater(function () {
++                            wallpaperGrid.contentY = wallpaperGrid.kpSavedY;
++                            KpoppingService.appending = false;
++                        });
++                    }
++                }
++
+                 // Sincronizar selectedIndex cuando el GridView cambia su currentIndex
+                 onCurrentIndexChanged: {
+                     if (currentIndex !== selectedIndex && currentIndex >= 0) {
+@@ -1239,6 +1420,10 @@ FocusScope {
                                          text: {
                                              if (parent.parent.isCurrentWallpaper) {
                                                  return I18n.t("wallpapers.current");
 +                                            } else if (KpoppingService.active) {
 +                                                // positive.ambxst-kpopping: resolution first, to spot low-quality shots
 +                                                const p = KpoppingService.bySrc[filteredWallpapers[wallpaperGrid.currentIndex]];
-+                                                return p ? p.width + "×" + p.height + " · " + p.title : "";
++                                                return p ? p.width + "×" + p.height + " · " + p.likes + (p.likes === 1 ? " like · " : " likes · ") + p.title : "";
                                              } else if (wallpaperGrid.currentIndex >= 0 && wallpaperGrid.currentIndex < filteredWallpapers.length) {
                                                  return filteredWallpapers[wallpaperGrid.currentIndex].split('/').pop();
                                              }
-@@ -1354,14 +1532,18 @@ FocusScope {
+@@ -1354,14 +1539,18 @@ FocusScope {
                                      anchors.fill: parent
                                      sourceComponent: staticImageComponent
                                      property string sourceFile: modelData
@@ -319,7 +356,7 @@ index f914730..4e265c6 100644
  
                                      Text {
                                          anchors.centerIn: parent
-@@ -1376,11 +1558,34 @@ FocusScope {
+@@ -1376,11 +1565,34 @@ FocusScope {
                                              to: 360
                                              duration: 1000
                                              loops: Animation.Infinite
@@ -355,40 +392,25 @@ index f914730..4e265c6 100644
                          }
                      }
  
-@@ -1408,7 +1613,9 @@ FocusScope {
-                         onClicked: {
+@@ -1405,10 +1617,15 @@ FocusScope {
+                         }
+                         onReleased: parent.scale = 1.0
+ 
+-                        onClicked: {
++                        onClicked: mouse => {
                              if (wallpaperGrid.isScrolling)
                                  return;
 -                            if (GlobalStates.wallpaperManager) {
 +                            if (KpoppingService.active) {
-+                                KpoppingService.apply(modelData, isPerScreen ? currentScreenName : "");
++                                if (mouse.modifiers & Qt.ShiftModifier)
++                                    KpoppingService.apply(modelData, isPerScreen ? currentScreenName : "");
++                                else
++                                    KpoppingService.preview(modelData, isPerScreen ? currentScreenName : "");
 +                            } else if (GlobalStates.wallpaperManager) {
                                  if (isPerScreen && currentScreenName !== "") {
                                      GlobalStates.wallpaperManager.setWallpaper(modelData, currentScreenName);
                                  } else {
-@@ -1418,6 +1625,21 @@ FocusScope {
-                         }
-                     }
- 
-+                    // positive.ambxst-kpopping: try it on the desktop before saving anything (also Shift+Enter)
-+                    ToggleButton {
-+                        anchors.top: parent.top
-+                        anchors.right: parent.right
-+                        anchors.margins: wallpapersTabRoot.wallpaperMargin + 6
-+                        visible: KpoppingService.active && isSelected
-+                        implicitWidth: 30
-+                        implicitHeight: 30
-+                        radius: Styling.radius(2)
-+                        iconSize: 16
-+                        buttonIcon: Icons.arrowsOut
-+                        tooltipText: "Preview on desktop (Shift+Enter)"
-+                        onToggle: function () { KpoppingService.preview(modelData, isPerScreen ? currentScreenName : ""); }
-+                    }
-+
-                     // Animaciones de color y escala.
-                     Behavior on color {
-                         enabled: Config.animDuration > 0
-@@ -1455,6 +1677,9 @@ FocusScope {
+@@ -1455,6 +1672,9 @@ FocusScope {
          Image {
              mipmap: true
              source: {
@@ -398,3 +420,65 @@ index f914730..4e265c6 100644
                  if (!parent.sourceFile || !GlobalStates.wallpaperManager)
                      return "";
  
+diff --git a/modules/widgets/defaultview/DefaultView.qml b/modules/widgets/defaultview/DefaultView.qml
+index c75a7ad..91470ed 100644
+--- a/modules/widgets/defaultview/DefaultView.qml
++++ b/modules/widgets/defaultview/DefaultView.qml
+@@ -157,6 +157,57 @@ Item {
+                 height: 32
+                 player: activePlayer
+                 notchHovered: expandedState
++                visible: !kpPreview.visible // positive.ambxst-kpopping
++            }
++
++            // positive.ambxst-kpopping: a kpopping photo is on the desktop as a preview — keep it or go back
++            Item {
++                id: kpPreview
++                anchors.verticalCenter: parent.verticalCenter
++                width: parent.width - userInfo.width - separator1.width - separator2.width - notifIndicator.width - (parent.spacing * 4)
++                height: 32
++                visible: KpoppingService.previewing || KpoppingService.previewPending
++                readonly property var photo: KpoppingService.previewPhoto
++
++                Text {
++                    anchors.left: parent.left
++                    anchors.leftMargin: 8
++                    anchors.right: kpButtons.left
++                    anchors.rightMargin: 8
++                    anchors.verticalCenter: parent.verticalCenter
++                    elide: Text.ElideRight
++                    text: KpoppingService.previewPending ? "Loading preview…" : "Preview" + (kpPreview.photo ? " · " + kpPreview.photo.width + "×" + kpPreview.photo.height : "")
++                    color: Colors.overBackground
++                    font.family: Config.theme.font
++                    font.pixelSize: Config.theme.fontSize
++                    font.weight: Font.Bold
++                }
++
++                Row {
++                    id: kpButtons
++                    anchors.right: parent.right
++                    anchors.verticalCenter: parent.verticalCenter
++                    spacing: 4
++
++                    ToggleButton {
++                        implicitWidth: 32
++                        implicitHeight: 32
++                        radius: Styling.radius(2)
++                        enabled: KpoppingService.previewing
++                        buttonIcon: Icons.accept
++                        tooltipText: "Keep: save to Wallpapers/kpopping"
++                        onToggle: function () { KpoppingService.savePreview(); }
++                    }
++
++                    ToggleButton {
++                        implicitWidth: 32
++                        implicitHeight: 32
++                        radius: Styling.radius(2)
++                        buttonIcon: Icons.cancel
++                        tooltipText: "Drop: back to your wallpaper and the picker"
++                        onToggle: function () { KpoppingService.discardPreview(); }
++                    }
++                }
+             }
+ 
+             Separator {
