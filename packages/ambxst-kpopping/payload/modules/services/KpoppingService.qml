@@ -13,6 +13,11 @@ import qs.modules.services
 // - apply (Shift+click / Shift+Enter, or ✓): copies the photo to
 //   <wallpaperDir>/kpopping/<Group>/<Idol>/ and sets it through the stock setWallpaper.
 // - fit: before every skwd-wall apply, picks skwd's fill mode (auto = portrait shown whole).
+// - YouTube (source "youtube"): search / paste a link, click plays the video as the wallpaper
+//   (mpvpaper on the layer above skwd-wall reads a named pipe that `bridge yt-player` feeds with
+//   yt-dlp, since YouTube refuses mpv's own stream fetches; controls in the notch), Shift+click adds it
+//   to "My playlist" (~/.config/ambxst/kpopping-youtube.json). The player is detached, so it
+//   keeps playing across shell reloads; any other wallpaper change stops it.
 // Lives as long as the shell, so mode, query, results and filters survive the
 // dashboard closing (and the tab being rebuilt).
 Singleton {
@@ -22,8 +27,71 @@ Singleton {
     readonly property string bridge: Quickshell.shellDir + "/scripts/kpopping_bridge.py"
     readonly property string cacheDir: (Quickshell.env("XDG_CACHE_HOME") || Quickshell.env("HOME") + "/.cache") + "/ambxst/kpopping/"
 
-    property bool active: false        // Wallpapers tab is showing kpopping results
-    property string lastQuery: ""      // restored into the search box
+    property bool active: false        // Wallpapers tab is showing online results
+    property string source: "kpopping" // "kpopping" | "youtube"
+    property var _lastQueries: ({})
+    readonly property string lastQuery: _lastQueries[source] || ""   // restored into the search box
+    readonly property string sourceName: source === "youtube" ? "YouTube" : "kpopping.com"
+
+    // Globe / ▶ buttons: switch source, or back to the local library ("").
+    function setSource(next) {
+        if (!next) {
+            active = false;
+            return;
+        }
+        if (next !== source) {
+            source = next;
+            _query = "";
+            photos = [];
+            thumbs = {};
+            shownQuery = "";
+            _shownKey = "";
+            entity = null;
+            candidates = [];
+            entityKey = "";
+            error = "";
+        }
+        active = true;
+    }
+
+    // Click / Enter (shift = Shift+click / Shift+Enter, ctrl = Ctrl+click / Ctrl+P) on a grid item.
+    function activate(src, screenName, shift, ctrl) {
+        if (source === "youtube") {
+            if (ytQueueView && (shift || ctrl))
+                ytQueueToggle(src, screenName);   // remove from Up next
+            else if (ctrl)
+                ytQueueToggle(src, screenName);
+            else if (shift)
+                ytTogglePlaylist(src);
+            else
+                ytPlay(src, screenName);
+        } else if (shift) {
+            apply(src, screenName);
+        } else {
+            preview(src, screenName);
+        }
+    }
+
+    function label(p) {
+        if (!p)
+            return "";
+        if (source === "youtube")
+            return p.title + (p.channel ? " · " + p.channel : "") + (p.duration ? " · " + _clock(p.duration) : "")
+                + (ytInPlaylist(p.id) ? " · in My playlist" : "") + (ytQueued(p.id) ? " · up next" : "");
+        return p.width + "×" + p.height + " · " + p.likes + (p.likes === 1 ? " like · " : " likes · ") + p.title;
+    }
+    function _clock(sec) {
+        const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+        return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
+    }
+
+    // The line shown over an empty grid.
+    readonly property string statusText: searching ? "Searching " + sourceName + "…" + (progress ? "  (" + progress + " albums)" : "")
+        : error ? error
+        : source === "youtube" && ytListView ? "My playlist is empty. Shift+click a video to add it"
+        : source === "youtube" && ytQueueView ? "Up next is empty. Ctrl+click a video (or Ctrl+P) to play it next"
+        : !_query ? (source === "youtube" ? "Search YouTube or paste a video / playlist link" : "Type an idol or group name") + (recent.length ? ", or pick a recent search below the box" : "")
+        : "No " + (source === "youtube" ? "videos" : "photos match these filters") + (hasMore ? " yet — scroll down or wait for more" : "")
     signal queryRequested(string query) // a "recent search" chip was clicked
 
     // ── filter chips (shown in the tab's FilterBar) ─────────────────────
@@ -42,8 +110,18 @@ Singleton {
         { label: "4K", type: "4k" },
         { label: "8K", type: "8k" }
     ]
+    readonly property var ytChips: [
+        { label: "Loop video", type: "yt:loop" },
+        { label: "Shuffle", type: "yt:shuffle" },
+        { label: "Autoplay", type: "yt:autoplay" }
+    ]
     // Empty box: recent searches. Ambiguous name: every match, best first, the shown one active.
     readonly property var filterChips: {
+        if (source === "youtube")
+            return (!_query && !ytListView && !ytQueueView ? recent.map(q => ({ label: q, type: "recent:" + q })) : [])
+                .concat(ytPlaylist.length ? [{ label: "▶ Play My playlist", type: "yt:playall" }] : [],
+                        [{ label: "My playlist (" + ytPlaylist.length + ")", type: "yt:playlist" },
+                         { label: "Up next (" + ytQueue.length + ")", type: "yt:queue" }], ytChips);
         let lead = [];
         if (!_query)
             lead = recent.map(q => ({ label: q, type: "recent:" + q }));
@@ -57,7 +135,10 @@ Singleton {
     readonly property bool _tagged: filters.includes("tagged")
     readonly property string _sort: (filters.find(f => f.startsWith("sort:")) || "sort:hot").slice(5)
     property string entityKey: ""      // a match picked from the chips ("" = the best one)
-    readonly property string _key: [_orient, _res, entityKey, _tagged ? "tagged" : "", _sort].join("|")
+    readonly property string _key: source === "youtube" ? "yt|" + (ytListView ? "list" : ytQueueView ? "queue" : "")
+        : [_orient, _res, entityKey, _tagged ? "tagged" : "", _sort].join("|")
+    readonly property bool ytListView: filters.includes("yt:playlist")
+    readonly property bool ytQueueView: filters.includes("yt:queue")
 
     onFiltersChanged: {
         // recent search chip: fill the box instead of filtering
@@ -65,6 +146,18 @@ Singleton {
         if (recentChip) {
             filters = filters.filter(f => !f.startsWith("recent:"));
             queryRequested(recentChip.slice(7));
+            return;
+        }
+        // ▶ Play My playlist: an action, not a filter
+        if (filters.includes("yt:playall")) {
+            filters = filters.filter(f => f !== "yt:playall");
+            ytPlayAll();
+            return;
+        }
+        // My playlist / Up next: one view at a time, the newest wins
+        const views = filters.filter(f => f === "yt:playlist" || f === "yt:queue");
+        if (views.length > 1) {
+            filters = filters.filter(f => f !== views[0]);
             return;
         }
         // match and sort chips act like radio buttons: the newest one wins, the shown one can't be unpicked
@@ -88,6 +181,7 @@ Singleton {
             pages = 1;
             photos = [];
         }
+        _ytOptionsChanged();
         _autoPages = 0;
         debounce.restart();
     }
@@ -119,9 +213,15 @@ Singleton {
     property string _query: ""
 
     function search(query) {
+        // typing in My playlist goes back to searching
+        if (source === "youtube" && (ytListView || ytQueueView) && query.trim() && query.trim() !== _query)
+            filters = filters.filter(f => f !== "yt:playlist" && f !== "yt:queue");
         _query = query.trim();
-        if (_query)
-            lastQuery = _query;
+        if (_query) {
+            const q = Object.assign({}, _lastQueries);
+            q[source] = _query;
+            _lastQueries = q;
+        }
         if (_query !== shownQuery) {
             // don't leave the old idol's photos up while the new search runs
             photos = [];
@@ -159,6 +259,10 @@ Singleton {
                 searchProc.running = false;   // stop the old search; onExited starts the newest one
             return;
         }
+        if (source === "youtube" && (ytListView || ytQueueView)) {
+            _ytShowList(ytQueueView ? ytQueue : ytPlaylist);
+            return;
+        }
         if (!_query || (_query === shownQuery && _key === _shownKey && pages === _shownPages && !error)) {
             searching = false;   // nothing to do, or these results are already showing
             return;
@@ -167,8 +271,9 @@ Singleton {
         searchProc.query = _query;
         searchProc.key = _key;
         searchProc.pages = pages;
-        searchProc.command = ["python3", bridge, "search", _query, "--orient", _orient, "--res", _res, "--pages", String(pages)]
-            .concat(entityKey ? ["--entity", entityKey] : [], _tagged ? ["--tagged"] : [], ["--sort", _sort]);
+        searchProc.command = source === "youtube" ? ["python3", bridge, "yt", _query, "--pages", String(pages)]
+            : ["python3", bridge, "search", _query, "--orient", _orient, "--res", _res, "--pages", String(pages)]
+                .concat(entityKey ? ["--entity", entityKey] : [], _tagged ? ["--tagged"] : [], ["--sort", _sort]);
         searchProc.running = true;
     }
 
@@ -218,6 +323,7 @@ Singleton {
                 root.candidates = d.candidates || [];
                 root.hasMore = !!d.more;
                 root.photos = d.photos || [];
+                root._shownList = !!d.list;
                 root.shownQuery = d.query;
                 root._shownKey = d.key;
                 root._shownPages = d.pages;
@@ -241,14 +347,20 @@ Singleton {
         }
     }
 
-    // ── recent searches (~/.cache/ambxst/kpopping/recent.json) ──────────
-    property var recent: []
+    // ── recent searches (kpopping: ~/.cache/ambxst/kpopping/recent.json, YouTube: in its json) ──
+    property var kpRecent: []
+    readonly property var recent: source === "youtube" ? ytRecent : kpRecent
     function _remember(query) {
         const next = [query].concat(recent.filter(q => q.toLowerCase() !== query.toLowerCase())).slice(0, 8);
         if (JSON.stringify(next) === JSON.stringify(recent))
             return;
-        recent = next;
-        recentFile.setText(JSON.stringify(next));
+        if (source === "youtube") {
+            ytRecent = next;
+            _ytSave();
+        } else {
+            kpRecent = next;
+            recentFile.setText(JSON.stringify(next));
+        }
     }
     FileView {
         id: recentFile
@@ -256,7 +368,7 @@ Singleton {
         printErrors: false
         onLoaded: {
             try {
-                root.recent = JSON.parse(text()) || [];
+                root.kpRecent = JSON.parse(text()) || [];
             } catch (e) {}
         }
     }
@@ -471,6 +583,306 @@ Singleton {
         }
     }
 
+    // ── YouTube wallpaper ──────────────────────────────────────────────
+    property string ytQuality: "auto"   // setting: auto (screen height) | best | 2160 | 1440 | 1080 | 720
+    property bool ytPause: false        // setting: pause while a window covers the screen
+    property var ytPlaylist: []         // [{id, title, channel, duration}]
+    property var ytRecent: []
+    property bool _shownList: false     // the grid shows a pasted playlist link
+    property bool ytPlaying: false
+    property string ytTitle: ""
+    // the same mute / volume as skwd-wall's video wallpapers (Wallpaper settings)
+    readonly property bool ytMuted: GlobalStates.videoWallpaperMuted
+    readonly property real ytVolume: GlobalStates.videoWallpaperVolume !== undefined ? GlobalStates.videoWallpaperVolume : 0.5
+    property bool ytPaused: false
+    property int ytCount: 0
+    property string _ytOutput: "ALL"
+    readonly property string _ytSocket: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/ambxst-kpopping-mpv.sock"
+    readonly property string _ytFifo: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/ambxst-kpopping-stream"
+    readonly property string _ytOptionsFile: Quickshell.env("HOME") + "/.config/ambxst/kpopping-youtube.json"
+    // stops the player and the feeder (they ignore SIGTERM while stuck: SIGKILL after)
+    readonly property string _ytKill: 'for p in "^mpvpaper .*ambxst-kpopping-mpv.sock" "^python3 .*kpopping_bridge.py yt-player"; do pkill -f "$p"; done; sleep 0.3; for p in "^mpvpaper .*ambxst-kpopping-mpv.sock" "^python3 .*kpopping_bridge.py yt-player"; do pkill -9 -f "$p"; done; '
+    readonly property bool _ytLoop: filters.includes("yt:loop")
+    readonly property bool _ytShuffle: filters.includes("yt:shuffle")
+    readonly property bool _ytAutoplay: filters.includes("yt:autoplay")
+
+    function ytInPlaylist(id) {
+        return ytPlaylist.some(e => e.id === id);
+    }
+
+    function ytTogglePlaylist(src) {
+        const p = bySrc[src];
+        if (!p)
+            return;
+        ytPlaylist = ytInPlaylist(p.id) ? ytPlaylist.filter(e => e.id !== p.id)
+            : ytPlaylist.concat([{ id: p.id, title: p.title, channel: p.channel, duration: p.duration }]);
+        _ytSave();
+        if (ytListView) {
+            _shownKey = "";
+            _run();
+        }
+    }
+
+    // ── Up next (Ctrl+click): ~/.cache/ambxst/kpopping/yt-upnext.json, popped by the feeder ──
+    property var ytQueue: []   // [{id, title, channel, duration, url}]
+    readonly property string _ytUpnextFile: cacheDir + "yt-upnext.json"
+    function ytQueued(id) {
+        return ytQueue.some(e => e.id === id);
+    }
+    function ytQueueToggle(src, screenName) {
+        const p = bySrc[src];
+        if (!p)
+            return;
+        if (ytQueued(p.id)) {
+            _ytSetQueue(ytQueue.filter(e => e.id !== p.id));
+        } else if (!ytPlaying) {
+            ytPlay(src, screenName);   // nothing playing: "play next" means now
+            return;
+        } else {
+            _ytSetQueue(ytQueue.concat([{ id: p.id, title: p.title, channel: p.channel, duration: p.duration, url: "https://www.youtube.com/watch?v=" + p.id }]));
+        }
+    }
+    function _ytSetQueue(list) {
+        ytQueue = list;
+        upnextFile.setText(JSON.stringify(list));
+        if (ytQueueView) {
+            _shownKey = "";
+            _run();
+        }
+    }
+    FileView {
+        id: upnextFile
+        path: root._ytUpnextFile
+        watchChanges: true   // the feeder takes videos off the front
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                const list = JSON.parse(text()) || [];
+                if (JSON.stringify(list) !== JSON.stringify(root.ytQueue)) {
+                    root.ytQueue = list;
+                    if (root.ytQueueView) {
+                        root._shownKey = "";
+                        root._run();
+                    }
+                }
+            } catch (e) {}
+        }
+    }
+
+    // ▶ Play My playlist: just your playlist, in order (or shuffled)
+    function ytPlayAll() {
+        if (!ytPlaylist.length)
+            return;
+        const queue = ytPlaylist.map(e => ({ url: "https://www.youtube.com/watch?v=" + e.id, title: e.title }));
+        _ytLaunch(queue, _ytShuffle ? Math.floor(Math.random() * queue.length) : 0, false, _ytLastScreen, queue[0].title);
+    }
+
+    function _ytShowList(entries) {
+        const list = entries.map(e => ({ src: "https://www.youtube.com/watch?v=" + e.id, id: e.id, title: e.title, channel: e.channel,
+                                             duration: e.duration, thumb: "https://i.ytimg.com/vi/" + e.id + "/mqdefault.jpg" }));
+        const t = {};
+        for (const p of list)
+            t[p.src] = p.thumb;
+        thumbs = t;
+        photos = list;
+        _shownList = true;
+        hasMore = false;
+        error = "";
+        searching = false;
+        shownQuery = _query;
+        _shownKey = _key;
+        _shownPages = pages;
+    }
+
+    // Play the clicked video. In My playlist or a pasted playlist: the whole list from there.
+    // A search result: that video, or with Autoplay, YouTube's Mix of related videos after it.
+    function ytPlay(src, screenName) {
+        const p = bySrc[src];
+        if (!p)
+            return;
+        let queue, start = 0, mix = false;
+        if (ytQueueView) {   // Up next: play this one now, the rest stays queued
+            _ytSetQueue(ytQueue.filter(e => e.id !== p.id));
+            queue = [{ url: src, title: p.title }];
+        } else if (_shownList) {
+            queue = photos.map(x => ({ url: x.src, title: x.title }));
+            start = Math.max(0, photos.findIndex(x => x.src === src));
+        } else {
+            mix = _ytAutoplay;
+            queue = [{ url: src, title: p.title, mix: "https://www.youtube.com/watch?v=" + p.id + "&list=RD" + p.id }];
+        }
+        _ytLaunch(queue, start, mix, screenName, p.title);
+    }
+
+    property string _ytLastScreen: ""
+    function _ytLaunch(queue, start, mix, screenName, title) {
+        _ytLastScreen = screenName || "";
+        const fmt = _ytFormat(screenName);
+        // auto-safe: decoders that can draw directly (no copying frames between GPUs);
+        // display-resample + interpolation: even motion for 60 fps video on a 144 Hz screen
+        const opts = ["hwdec=auto-safe", "video-sync=display-resample", "interpolation", "tscale=oversample", "no-osc", "panscan=1.0", "input-ipc-server=" + _ytSocket, "ytdl=no", "idle=yes", "loop-playlist=force",
+                      "mute=" + (ytMuted ? "yes" : "no"), "volume=" + Math.round(Math.max(0, Math.min(1, ytVolume)) * 100)].join(" ");
+        const job = JSON.stringify({ fifo: _ytFifo, format: fmt, options: _ytOptionsFile, upnext: _ytUpnextFile, start: start, mix: mix, queue: queue });
+        _ytOutput = screenName || "ALL";
+        _ytStopping = false;
+        _ytStarting = true;   // the wallpaper-change watcher below must not stop the new video
+        _ytBase = "";
+        ytTitle = title;
+        // replace a running player; setsid: both keep running across shell reloads
+        ytLauncher.command = ["sh", "-c", _ytKill
+            + 'mkdir -p "$(dirname "$4")"; printf "%s" "$5" > "$4"; rm -f "$3"; mkfifo "$3"; '
+            + 'setsid -f mpvpaper -l bottom -o "$1" "$2" "$3" >/dev/null 2>&1; '
+            + 'setsid -f python3 "$6" yt-player "$4" >/dev/null 2>&1',
+            "sh", opts, _ytOutput, _ytFifo, cacheDir + "yt-queue.json", job, bridge];
+        ytLauncher.running = true;
+        Visibilities.setActiveModule("");
+    }
+
+    // yt-dlp format: at most the screen's height (auto) or the cap, preferring VP9 then H.264 over
+    // AV1 at that size. Many GPUs (AMD Renoir included) decode VP9/H.264 but not AV1, and a 4K
+    // AV1 stream on a 1080p screen decodes 4x the pixels on the CPU only to throw them away.
+    function _ytFormat(screenName) {
+        let cap = 0;
+        if (ytQuality === "auto") {
+            for (const m of AxctlService.monitors.values || [])
+                if (!screenName || m.name === screenName)
+                    cap = Math.max(cap, Math.min(m.width || 0, m.height || 0));
+        } else if (ytQuality !== "best") {
+            cap = parseInt(ytQuality) || 0;
+        }
+        const h = cap > 0 ? "[height<=?" + cap + "]" : "";
+        return ["bestvideo" + h + "[vcodec^=vp09]+bestaudio", "bestvideo" + h + "[vcodec^=avc1]+bestaudio",
+                "bestvideo" + h + "+bestaudio", "best" + h, "best"].join("/");
+    }
+
+    function ytStop() {
+        _ytStopping = true;
+        Quickshell.execDetached(["sh", "-c", _ytKill + 'rm -f "$1"', "sh", _ytFifo]);
+    }
+    function ytToggleMute() {
+        GlobalStates.setVideoWallpaperMuted(!GlobalStates.videoWallpaperMuted);
+    }
+    function ytNext() {
+        Quickshell.execDetached(["pkill", "-USR1", "-f", "^python3 .*kpopping_bridge.py yt-player"]);
+    }
+    onYtMutedChanged: if (ytPlaying) _ytCommand(["set_property", "mute", ytMuted])
+    onYtVolumeChanged: if (ytPlaying) _ytCommand(["set_property", "volume", Math.round(Math.max(0, Math.min(1, ytVolume)) * 100)])
+    function _ytCommand(command) {
+        Quickshell.execDetached(["python3", bridge, "mpv", JSON.stringify(command)]);
+    }
+
+    // Loop / Shuffle chips also change the video that's playing.
+    property string _ytOptionsSaved: ""
+    function _ytOptionsChanged() {
+        const now = [_ytLoop, _ytShuffle, _ytAutoplay].join();
+        if (now === _ytOptionsSaved)
+            return;
+        _ytOptionsSaved = now;
+        if (ytLoaded)
+            _ytSave();   // the feeder re-reads Loop / Shuffle from it before every video
+    }
+
+    Process {
+        id: ytLauncher
+        onExited: watchRestart.restart()
+    }
+    Timer {
+        id: watchRestart
+        interval: 400
+        onTriggered: {
+            ytWatch.running = false;
+            ytWatch.running = true;
+        }
+    }
+    // Follows the player (also one that survived a reload): title, mute, pause; ends when it quits.
+    Process {
+        id: ytWatch
+        command: ["python3", root.bridge, "mpv-watch"]
+        stdout: SplitParser {
+            onRead: line => {
+                let d;
+                try {
+                    d = JSON.parse(line);
+                } catch (e) {
+                    return;
+                }
+                if (!root.ytPlaying)
+                    root._ytBase = root._current(root._ytOutput === "ALL" ? "" : root._ytOutput);
+                root.ytPlaying = true;
+                root._ytStarting = false;
+                if (d.prop === "media-title" && d.value)
+                    root.ytTitle = d.value;
+                else if (d.prop === "pause")
+                    root.ytPaused = !!d.value;
+                else if (d.prop === "user-data/kpopping/count")
+                    root.ytCount = d.value || 0;
+            }
+        }
+        onExited: {
+            root.ytPlaying = false;
+            root.ytPaused = false;
+        }
+    }
+
+    // Choosing any other wallpaper (picker, kpopping preview, rotation) stops the video. Compared
+    // with the wallpaper current when it started: right after a reload, currentWallpaper still
+    // follows the startup scan, which isn't a choice.
+    property bool _ytStarting: false
+    property bool _ytStopping: false
+    property string _ytBase: ""
+    function _ytWallChanged() {
+        if (!ytPlaying || _ytStopping)
+            return;
+        const now = _current(_ytOutput === "ALL" ? "" : _ytOutput);
+        if (_ytStarting || !_ytBase) {
+            _ytBase = now;
+            return;
+        }
+        if (now && now !== _ytBase)
+            ytStop();
+    }
+    Connections {
+        target: GlobalStates.wallpaperManager
+        function onCurrentWallpaperChanged() {
+            root._ytWallChanged();
+        }
+        function onPerScreenWallpapersChanged() {
+            root._ytWallChanged();
+        }
+    }
+
+    // Setting "pause while covered": the same rule skwd-wall uses for video wallpapers.
+    readonly property bool ytWantPause: ytPause && ytPlaying && (GameModeClient.toggled
+        || (_ytOutput === "ALL" ? (AxctlService.monitors.values || []).some(m => SkwdWall.coveredScreen(m.name)) : SkwdWall.coveredScreen(_ytOutput)))
+    onYtWantPauseChanged: _ytCommand(["set_property", "pause", ytWantPause])
+
+    // ~/.config/ambxst/kpopping-youtube.json: My playlist, chip states, mute, recent searches
+    property bool ytLoaded: false
+    function _ytSave() {
+        ytFile.setText(JSON.stringify({ playlist: ytPlaylist, recent: ytRecent,
+                                        loop: _ytLoop, shuffle: _ytShuffle, autoplay: _ytAutoplay }, null, 2) + "\n");
+    }
+    FileView {
+        id: ytFile
+        path: root._ytOptionsFile
+        printErrors: false
+        onLoaded: {
+            try {
+                const d = JSON.parse(text());
+                root.ytPlaylist = d.playlist || [];
+                root.ytRecent = d.recent || [];
+                const chips = (d.loop ? ["yt:loop"] : []).concat(d.shuffle ? ["yt:shuffle"] : [], d.autoplay !== false ? ["yt:autoplay"] : []);
+                root.filters = root.filters.filter(f => !["yt:loop", "yt:shuffle", "yt:autoplay"].includes(f)).concat(chips);
+            } catch (e) {}
+            root.ytLoaded = true;
+        }
+        onLoadFailed: {
+            root.filters = root.filters.concat(["yt:autoplay"]);   // first run: Autoplay on
+            root.ytLoaded = true;
+        }
+    }
+
     // ── fit (mod settings, applied before every skwd-wall apply) ────────
     property string fitMode: "auto"        // auto | fill | fit | stretch | center | tile | skwd
     property string fitBackground: "blur"  // blur | color
@@ -483,15 +895,20 @@ Singleton {
     }
 
     function _setting(key, value) {
-        if (key === "fitMode" || key === "fitBackground")
+        if (key === "fitMode" || key === "fitBackground" || key === "ytQuality")
             root[key] = String(value);
+        else if (key === "ytPause")
+            root.ytPause = value === true || value === "true";
     }
 
-    Component.onCompleted: ModsService.getSettings(modId, (result, error) => {
-        const values = result && result.values ? result.values : {};
-        for (const key in values)
-            _setting(key, values[key]);
-    })
+    Component.onCompleted: {
+        ModsService.getSettings(modId, (result, error) => {
+            const values = result && result.values ? result.values : {};
+            for (const key in values)
+                _setting(key, values[key]);
+        });
+        ytWatch.running = true;   // pick up a YouTube wallpaper still playing from before a reload
+    }
 
     Connections {
         target: ModsService
@@ -499,6 +916,8 @@ Singleton {
             if (id !== root.modId)
                 return;
             root._setting(key, value);
+            if (key !== "fitMode" && key !== "fitBackground")
+                return;
             // show the new fit right away: have skwd-wall apply the current wallpaper again
             SkwdWall.applied = ({});
             SkwdWall.sync();

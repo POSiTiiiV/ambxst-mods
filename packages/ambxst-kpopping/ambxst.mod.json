@@ -3,8 +3,8 @@
   "manifestVersion": 1,
   "id": "positive.ambxst-kpopping",
   "name": "Kpopping Online Wallpapers",
-  "version": "1.3.3",
-  "description": "Search K-pop idols and groups on kpopping.com from the Wallpapers tab: ranked name matches with one-click alternatives, recent searches, infinite scroll through every post, Hot / Newest / Most liked order, and orientation/resolution (SD-8K) filter chips. Clicking a photo previews it on an empty workspace; keep or drop it from the notch. Kept photos are saved as <wallpaper dir>/kpopping/<Group>/<Idol>/<Idol>_<date>_<id>.jpg. Also adds a Wallpaper fit setting for skwd-wall (Auto shows portrait wallpapers whole on a blurred backdrop) and makes the picker reopen faster.",
+  "version": "1.5.0",
+  "description": "Online wallpapers in Ambxst's Wallpapers tab. kpopping.com: search K-pop idols and groups (ranked matches, recent searches, infinite scroll, Hot / Newest / Most liked, orientation and SD-8K chips), preview on an empty workspace, keep or drop it from the notch, saved as <wallpaper dir>/kpopping/<Group>/<Idol>/. YouTube: search or paste a link, play videos as a live wallpaper (muted, controls in the notch), My playlist, Up next queue, loop / shuffle / autoplay, quality matched to your screen. Also a Wallpaper fit setting for skwd-wall and a faster-opening picker.",
   "license": "MIT",
   "author": "POSiTiiiV",
   "authorUrl": "https://github.com/POSiTiiiV",
@@ -23,14 +23,21 @@
   "commands": [
     "python3",
     "sh",
-    "curl"
+    "curl",
+    "mpv",
+    "mpvpaper",
+    "yt-dlp",
+    "setsid",
+    "pkill"
   ],
   "permissions": [
     "Queries kpopping.com's public API (no login, no cookies) when you search in Kpopping mode",
     "Downloads thumbnails (via kpopping.com's image resizer) and full-size photos (from its Cloudflare R2 bucket) into ~/.cache/ambxst/kpopping; thumbnails unused for 30 days and previews older than 7 days are deleted, except a preview that is still your wallpaper",
     "Copies the photo you pick into <wallpaper dir>/kpopping/",
     "Desktop previews close the dashboard, switch to an empty workspace and set the cached photo as your wallpaper (colours included) until you keep or drop it from the notch",
-    "Writes display.fillMode / display.backgroundMode in skwd-wall's ~/.config/skwd-wall-v2/config.json before each wallpaper change (the Wallpaper fit setting; 'Leave it to skwd-wall' turns this off)"
+    "Writes display.fillMode / display.backgroundMode in skwd-wall's ~/.config/skwd-wall-v2/config.json before each wallpaper change (the Wallpaper fit setting; 'Leave it to skwd-wall' turns this off)",
+    "Keeps My playlist, the YouTube chips and recent YouTube searches in ~/.config/ambxst/kpopping-youtube.json",
+    "YouTube mode searches and lists videos with yt-dlp, and plays the one you pick with mpvpaper (mpv) on the desktop. yt-dlp downloads each video straight into a pipe the player reads, nothing saved to disk. The player keeps running across shell reloads until you stop it or choose another wallpaper"
   ],
   "operations": [
     {
