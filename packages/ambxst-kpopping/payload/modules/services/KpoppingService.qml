@@ -119,7 +119,8 @@ Singleton {
     readonly property var filterChips: {
         if (source === "youtube")
             return (!_query && !ytListView && !ytQueueView ? recent.map(q => ({ label: q, type: "recent:" + q })) : [])
-                .concat(ytPlaylist.length ? [{ label: "▶ Play My playlist", type: "yt:playall" }] : [],
+                .concat(ytResume && !ytPlaying ? [{ label: "⏵ Resume: " + ytResume.item.title, type: "yt:resume" }] : [],
+                        ytPlaylist.length ? [{ label: "▶ Play My playlist", type: "yt:playall" }] : [],
                         [{ label: "My playlist (" + ytPlaylist.length + ")", type: "yt:playlist" },
                          { label: "Up next (" + ytQueue.length + ")", type: "yt:queue" }], ytChips);
         let lead = [];
@@ -148,7 +149,12 @@ Singleton {
             queryRequested(recentChip.slice(7));
             return;
         }
-        // ▶ Play My playlist: an action, not a filter
+        // ⏵ Resume / ▶ Play My playlist: actions, not filters
+        if (filters.includes("yt:resume")) {
+            filters = filters.filter(f => f !== "yt:resume");
+            ytResumePlay();
+            return;
+        }
         if (filters.includes("yt:playall")) {
             filters = filters.filter(f => f !== "yt:playall");
             ytPlayAll();
@@ -623,9 +629,10 @@ Singleton {
         }
     }
 
-    // ── Up next (Ctrl+click): ~/.cache/ambxst/kpopping/yt-upnext.json, popped by the feeder ──
+    // ── Up next (Ctrl+click): $XDG_RUNTIME_DIR/ambxst-kpopping-upnext.json, popped by the feeder.
+    // The runtime dir survives `ambxst reload` and is emptied by a new session. ──
     property var ytQueue: []   // [{id, title, channel, duration, url}]
-    readonly property string _ytUpnextFile: cacheDir + "yt-upnext.json"
+    readonly property string _ytUpnextFile: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/ambxst-kpopping-upnext.json"
     function ytQueued(id) {
         return ytQueue.some(e => e.id === id);
     }
@@ -674,7 +681,7 @@ Singleton {
     function ytPlayAll() {
         if (!ytPlaylist.length)
             return;
-        const queue = ytPlaylist.map(e => ({ url: "https://www.youtube.com/watch?v=" + e.id, title: e.title }));
+        const queue = ytPlaylist.map(e => ({ url: "https://www.youtube.com/watch?v=" + e.id, title: e.title, channel: e.channel }));
         _ytLaunch(queue, _ytShuffle ? Math.floor(Math.random() * queue.length) : 0, false, _ytLastScreen, queue[0].title);
     }
 
@@ -704,26 +711,32 @@ Singleton {
         let queue, start = 0, mix = false;
         if (ytQueueView) {   // Up next: play this one now, the rest stays queued
             _ytSetQueue(ytQueue.filter(e => e.id !== p.id));
-            queue = [{ url: src, title: p.title }];
+            queue = [{ url: src, title: p.title, channel: p.channel }];
         } else if (_shownList) {
-            queue = photos.map(x => ({ url: x.src, title: x.title }));
+            queue = photos.map(x => ({ url: x.src, title: x.title, channel: x.channel }));
             start = Math.max(0, photos.findIndex(x => x.src === src));
         } else {
             mix = _ytAutoplay;
-            queue = [{ url: src, title: p.title, mix: "https://www.youtube.com/watch?v=" + p.id + "&list=RD" + p.id }];
+            queue = [{ url: src, title: p.title, channel: p.channel, mix: "https://www.youtube.com/watch?v=" + p.id + "&list=RD" + p.id }];
         }
         _ytLaunch(queue, start, mix, screenName, p.title);
     }
 
     property string _ytLastScreen: ""
-    function _ytLaunch(queue, start, mix, screenName, title) {
+    function _ytLaunch(queue, start, mix, screenName, title, extra) {
+        ytResume = null;
         _ytLastScreen = screenName || "";
         const fmt = _ytFormat(screenName);
         // auto-safe: decoders that can draw directly (no copying frames between GPUs);
         // display-resample + interpolation: even motion for 60 fps video on a 144 Hz screen
-        const opts = ["hwdec=auto-safe", "video-sync=display-resample", "interpolation", "tscale=oversample", "no-osc", "panscan=1.0", "input-ipc-server=" + _ytSocket, "ytdl=no", "idle=yes", "loop-playlist=force",
+        // cache: read the stream ahead into RAM so yt-dlp isn't held back for minutes (YouTube resets
+        // connections left waiting); load-scripts=no: no second MPRIS player from an mpv plugin (the feeder is one)
+        const opts = ["hwdec=auto-safe", "video-sync=display-resample", "interpolation", "tscale=oversample", "no-osc", "panscan=1.0",
+                      "cache=yes", "demuxer-max-bytes=256MiB", "demuxer-max-back-bytes=32MiB", "load-scripts=no",
+                      "input-ipc-server=" + _ytSocket, "ytdl=no", "idle=yes", "loop-playlist=force",
                       "mute=" + (ytMuted ? "yes" : "no"), "volume=" + Math.round(Math.max(0, Math.min(1, ytVolume)) * 100)].join(" ");
-        const job = JSON.stringify({ fifo: _ytFifo, format: fmt, options: _ytOptionsFile, upnext: _ytUpnextFile, start: start, mix: mix, queue: queue });
+        const job = JSON.stringify(Object.assign({ fifo: _ytFifo, format: fmt, options: _ytOptionsFile, upnext: _ytUpnextFile,
+                                                   state: _ytStateFile, output: screenName || "", start: start, mix: mix, queue: queue }, extra || {}));
         _ytOutput = screenName || "ALL";
         _ytStopping = false;
         _ytStarting = true;   // the wallpaper-change watcher below must not stop the new video
@@ -756,15 +769,54 @@ Singleton {
                 "bestvideo" + h + "+bestaudio", "best" + h, "best"].join("/");
     }
 
+    // Stop hides the video: the feeder saves video, position and list (SIGHUP), then the player
+    // closes; ⏵ Resume continues there. Kept in $XDG_RUNTIME_DIR: survives `ambxst reload`, a new session forgets it.
     function ytStop() {
         _ytStopping = true;
-        Quickshell.execDetached(["sh", "-c", _ytKill + 'rm -f "$1"', "sh", _ytFifo]);
+        Quickshell.execDetached(["pkill", "-HUP", "-f", "^python3 .*kpopping_bridge.py yt-player"]);
+        ytStopCleanup.restart();
+    }
+    Timer {
+        id: ytStopCleanup
+        interval: 1500   // whatever didn't close by itself (an older or stuck feeder)
+        onTriggered: Quickshell.execDetached(["sh", "-c", root._ytKill + 'rm -f "$1"', "sh", root._ytFifo])
+    }
+
+    property var ytResume: null   // {queue, i, from_list, item, seek, output}
+    readonly property string _ytStateFile: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/ambxst-kpopping-state.json"
+
+    function ytResumePlay() {
+        const st = ytResume;
+        if (!st || !st.queue)
+            return;
+        _ytLaunch(st.queue, st.i || 0, false, st.output || "", st.item.title,
+                  { first_item: st.from_list ? null : st.item, from_list: !!st.from_list, seek: st.seek || 0 });
+    }
+
+    FileView {
+        id: ytStateFile
+        path: root._ytStateFile
+        printErrors: false
+        onLoaded: {
+            try {
+                const d = JSON.parse(text());
+                if (d.hidden && !root.ytPlaying)
+                    root.ytResume = d;
+            } catch (e) {}
+        }
     }
     function ytToggleMute() {
         GlobalStates.setVideoWallpaperMuted(!GlobalStates.videoWallpaperMuted);
     }
     function ytNext() {
         Quickshell.execDetached(["pkill", "-USR1", "-f", "^python3 .*kpopping_bridge.py yt-player"]);
+    }
+    function ytPrevious() {
+        Quickshell.execDetached(["pkill", "-USR2", "-f", "^python3 .*kpopping_bridge.py yt-player"]);
+    }
+    function ytTogglePause() {
+        _ytAutoPaused = false;   // your choice now; the covered-screen rule won't undo it
+        _ytCommand(["cycle", "pause"]);
     }
     onYtMutedChanged: if (ytPlaying) _ytCommand(["set_property", "mute", ytMuted])
     onYtVolumeChanged: if (ytPlaying) _ytCommand(["set_property", "volume", Math.round(Math.max(0, Math.min(1, ytVolume)) * 100)])
@@ -822,6 +874,7 @@ Singleton {
         onExited: {
             root.ytPlaying = false;
             root.ytPaused = false;
+            ytStateFile.reload();
         }
     }
 
@@ -855,7 +908,17 @@ Singleton {
     // Setting "pause while covered": the same rule skwd-wall uses for video wallpapers.
     readonly property bool ytWantPause: ytPause && ytPlaying && (GameModeClient.toggled
         || (_ytOutput === "ALL" ? (AxctlService.monitors.values || []).some(m => SkwdWall.coveredScreen(m.name)) : SkwdWall.coveredScreen(_ytOutput)))
-    onYtWantPauseChanged: _ytCommand(["set_property", "pause", ytWantPause])
+    // only undo a pause this rule made, never one you made (notch ⏯ / media keys)
+    property bool _ytAutoPaused: false
+    onYtWantPauseChanged: {
+        if (ytWantPause && !ytPaused) {
+            _ytAutoPaused = true;
+            _ytCommand(["set_property", "pause", true]);
+        } else if (!ytWantPause && _ytAutoPaused) {
+            _ytAutoPaused = false;
+            _ytCommand(["set_property", "pause", false]);
+        }
+    }
 
     // ~/.config/ambxst/kpopping-youtube.json: My playlist, chip states, mute, recent searches
     property bool ytLoaded: false

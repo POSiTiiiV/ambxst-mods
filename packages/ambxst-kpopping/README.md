@@ -40,13 +40,15 @@ Press **▶** at the end of the top row, then search, or paste a YouTube video o
 | **Click / Enter** | Plays the video as your wallpaper and closes the dashboard. What comes after it is described below. |
 | **Shift+click / Shift+Enter** | Adds the video to **My playlist** (kept for good), or removes it there. |
 | **Ctrl+click / Ctrl+P** | Adds the video to **Up next**: it plays after the current video, ahead of everything else. With nothing playing, it plays now. |
+| **⏵ Resume: …** chip | After **stop** (or choosing another wallpaper): continues the same video, a couple of seconds before where it stopped, with the same list and Up next. Survives `ambxst reload`; a new session (log out / reboot) forgets it. |
 | **▶ Play My playlist** chip | Plays your playlist, and only it, from the top (Shuffle: from a random video). |
 | **My playlist (N)** chip | Shows your playlist in the grid. Click a video to play the playlist from there. Typing a search goes back to results. Saved in `~/.config/ambxst/kpopping-youtube.json`. |
 | **Up next (N)** chip | Shows the queue. Click one to play it now; Shift+ or Ctrl+click removes it. The queue empties as videos play. |
 | **Loop video** | Repeats the current video instead of moving on. Also applies to the video that's playing. |
 | **Shuffle** | Shuffles the playlist. Also applies to the one that's playing. |
 | **Autoplay** (on by default) | After a search result, keeps going with YouTube's Mix of related videos, like YouTube's own autoplay. Off: that one video loops. |
-| **Notch** | While a video plays: its title, **mute/unmute**, **next** (in a list) and **stop**. Mute and volume are the same setting as skwd-wall's video wallpapers (Wallpaper settings), both ways. |
+| **Notch** | While a video plays: its title (scrolling when it's long). **Hover** the notch for **⏮ previous**, **⏯ pause/play**, **mute/unmute**, **⏭ next** and **stop**: they take the title's place, or sit beside it, with the notch sized to fit, when *expand notch on hover* is on. Mute and volume are the same setting as skwd-wall's video wallpapers (Wallpaper settings), both ways. |
+| **Media keys / media widgets** | The wallpaper is an MPRIS player called *YouTube wallpaper* (needs PyGObject): play/pause, next, previous and stop work from your keyboard's media keys, `playerctl`, and Ambxst's media controls, with title, channel and thumbnail. |
 
 - **Quality** (Settings → Mods → Kpopping): *Auto* (default) fetches at most your screen's resolution. *Best available*, or a cap at 2160p / 1440p / 1080p / 720p. At that size VP9, then H.264, are preferred over AV1, because most GPUs decode them in hardware. Motion is smoothed for 60 fps video on high-refresh screens.
 - **Pause YouTube wallpaper when covered** (off by default): pause while a fullscreen window covers the screen, and in game mode. This is the same rule skwd-wall uses for video wallpapers.
@@ -62,7 +64,9 @@ Press **▶** at the end of the top row, then search, or paste a YouTube video o
 Lists loop when they reach the end.
 - Nothing is saved: the pipe is a ~64 KB kernel buffer, and mpv buffers a little ahead in RAM.
 - The video streams through mpvpaper on the layer just above skwd-wall. YouTube refuses mpv's own stream fetches (HTTP 403), so yt-dlp downloads each video straight into a pipe the player reads. Nothing is saved to disk. A video starts after ~5–10 s.
-- The player runs on its own, so `ambxst reload` doesn't stop it. Choosing any other wallpaper does (picker, kpopping preview, rotation), and so does **stop** in the notch.
+- The player runs on its own, so `ambxst reload` doesn't stop it.
+- **Stop** in the notch (or a media-key stop, or choosing any other wallpaper) *hides* the video and remembers where it was. Use **⏵ Resume** to pick it back up. That and Up next live in `$XDG_RUNTIME_DIR`, so they survive `ambxst reload` and a new session starts fresh.
+- A resume starts at the next keyframe, so the picture can lag the sound by a few seconds.
 - In per-screen mode it plays on that screen, otherwise on all of them.
 - With Ambxst's desktop icons on, the video covers them (they share its layer).
 - Colours stay those of your wallpaper underneath.

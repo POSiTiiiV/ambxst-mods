@@ -425,10 +425,29 @@ index f914730..61b71b1 100644
                      return "";
  
 diff --git a/modules/widgets/defaultview/DefaultView.qml b/modules/widgets/defaultview/DefaultView.qml
-index c75a7ad..fa0f691 100644
+index c75a7ad..8da0497 100644
 --- a/modules/widgets/defaultview/DefaultView.qml
 +++ b/modules/widgets/defaultview/DefaultView.qml
-@@ -157,6 +157,92 @@ Item {
+@@ -66,12 +66,16 @@ Item {
+     }
+ 
+     // Computed dimensions
+-    readonly property real mainRowContentWidth: 200 + userInfo.width + separator1.width + separator2.width + notifIndicator.width + (mainRow.spacing * 4) + mainRowMargin
++    // positive.ambxst-kpopping: a kpopping preview gets room for ✓/✗; a YouTube wallpaper fits the usual width
++    // (title, or controls on hover), and only an expanding notch grows on hover to title + controls
++    readonly property real kpExtra: !kpPreview.visible ? 0 : kpPreview.photoMode ? 100
++        : (kpPreview.showTitle && kpPreview.showControls) ? Math.min(360, Math.max(0, kpTitle.contentWidth + kpButtons.width + 24 - 200)) : 0
++    readonly property real mainRowContentWidth: 200 + kpExtra + userInfo.width + separator1.width + separator2.width + notifIndicator.width + (mainRow.spacing * 4) + mainRowMargin
+     readonly property real mainRowHeight: Config.showBackground ? (Config.notchTheme === "island" ? 36 : 44) : (Config.notchTheme === "island" ? 36 : 40)
+     readonly property real notificationMinWidth: expandedState ? 420 : 320
+     readonly property real notificationContainerHeight: notificationView.implicitHeight + notificationPaddingTop + notificationPaddingBottom
+ 
+-    implicitWidth: Math.round((hasActiveNotifications || mediaHoverExpanded) ? Math.max(notificationMinWidth + (notificationPadding * 2), mainRowContentWidth) : mainRowContentWidth)
++    implicitWidth: Math.round((hasActiveNotifications || (mediaHoverExpanded && !kpPreview.visible)) ? Math.max(notificationMinWidth + (notificationPadding * 2), mainRowContentWidth) : mainRowContentWidth) // positive.ambxst-kpopping: no media-hover widening under the strip
+ 
+     implicitHeight: hasActiveNotifications ? mainRowHeight + notificationContainerHeight : mainRowHeight
+ 
+@@ -157,6 +161,168 @@ Item {
                  height: 32
                  player: activePlayer
                  notchHovered: expandedState
@@ -436,7 +455,8 @@ index c75a7ad..fa0f691 100644
 +            }
 +
 +            // positive.ambxst-kpopping: a kpopping photo is on the desktop as a preview — keep it or go back.
-+            // Otherwise, while a YouTube wallpaper plays: its title, mute, next, stop.
++            // Otherwise, while a YouTube wallpaper plays: its title (scrolling when long); on hover the
++            // controls (⏮ ⏯ mute ⏭ ⏹) take its place, or sit beside it when the notch expands on hover.
 +            Item {
 +                id: kpPreview
 +                anchors.verticalCenter: parent.verticalCenter
@@ -445,32 +465,99 @@ index c75a7ad..fa0f691 100644
 +                readonly property bool photoMode: KpoppingService.previewing || KpoppingService.previewPending
 +                visible: photoMode || KpoppingService.ytPlaying
 +                readonly property var photo: KpoppingService.previewPhoto
++                readonly property bool canExpand: !(Config.notch.disableHoverExpansion ?? true)
++                readonly property bool showControls: photoMode || root.expandedState
++                readonly property bool showTitle: photoMode || !root.expandedState || canExpand
 +
-+                Text {
++                Item {
++                    id: kpTitleBox
 +                    anchors.left: parent.left
 +                    anchors.leftMargin: 8
-+                    anchors.right: kpButtons.left
++                    anchors.right: kpPreview.showControls ? kpButtons.left : parent.right
 +                    anchors.rightMargin: 8
-+                    anchors.verticalCenter: parent.verticalCenter
-+                    elide: Text.ElideRight
-+                    text: !kpPreview.photoMode ? (KpoppingService.ytPaused ? "Paused · " : "") + KpoppingService.ytTitle
-+                        : KpoppingService.previewPending ? "Loading preview…" : "Preview" + (kpPreview.photo ? " · " + kpPreview.photo.width + "×" + kpPreview.photo.height : "")
-+                    color: Colors.overBackground
-+                    font.family: Config.theme.font
-+                    font.pixelSize: Config.theme.fontSize
-+                    font.weight: Font.Bold
++                    height: parent.height
++                    visible: kpPreview.showTitle
++                    clip: true
++
++                    Text {
++                        id: kpTitle
++                        anchors.verticalCenter: parent.verticalCenter
++                        readonly property bool scrolls: contentWidth > kpTitleBox.width && kpTitleBox.visible && kpPreview.visible
++                        // fits: centred (stays centred when a notification widens the notch); too long: marquee
++                        property real marqueeX: 0
++                        x: scrolls ? marqueeX : Math.round((kpTitleBox.width - contentWidth) / 2)
++                        text: !kpPreview.photoMode ? (KpoppingService.ytPaused ? "Paused · " : "") + KpoppingService.ytTitle
++                            : KpoppingService.previewPending ? "Loading preview…" : "Preview" + (kpPreview.photo ? " · " + kpPreview.photo.width + "×" + kpPreview.photo.height : "")
++                        color: Colors.overBackground
++                        font.family: Config.theme.font
++                        font.pixelSize: Config.theme.fontSize
++                        font.weight: Font.Bold
++                        onTextChanged: marqueeX = 0
++                        onScrollsChanged: marqueeX = 0
++
++                        // marquee: out to the end, pause, back
++                        SequentialAnimation {
++                            running: kpTitle.scrolls
++                            loops: Animation.Infinite
++                            PauseAnimation { duration: 1500 }
++                            NumberAnimation {
++                                target: kpTitle
++                                property: "marqueeX"
++                                to: kpTitleBox.width - kpTitle.contentWidth
++                                duration: Math.max(2000, (kpTitle.contentWidth - kpTitleBox.width) * 30)
++                                easing.type: Easing.InOutQuad
++                            }
++                            PauseAnimation { duration: 1500 }
++                            NumberAnimation {
++                                target: kpTitle
++                                property: "marqueeX"
++                                to: 0
++                                duration: 600
++                                easing.type: Easing.InOutQuad
++                            }
++                        }
++                    }
 +                }
 +
 +                Row {
 +                    id: kpButtons
-+                    anchors.right: parent.right
++                    // beside the title: right-aligned; in its place (notch not expanding): centred.
++                    // x, not anchors: swapping anchors back and forth can leave none applied (stuck left)
++                    x: kpPreview.showTitle ? parent.width - width : Math.round((parent.width - width) / 2)
 +                    anchors.verticalCenter: parent.verticalCenter
-+                    spacing: 4
++                    spacing: 2
++                    visible: kpPreview.showControls
 +
 +                    ToggleButton {
 +                        visible: !kpPreview.photoMode
-+                        implicitWidth: 32
-+                        implicitHeight: 32
++                        implicitWidth: 28
++                        implicitHeight: 28
++                        iconSize: 16
++                        enableShadow: false
++                        radius: Styling.radius(2)
++                        buttonIcon: Icons.previous
++                        tooltipText: "Previous video"
++                        onToggle: function () { KpoppingService.ytPrevious(); }
++                    }
++
++                    ToggleButton {
++                        visible: !kpPreview.photoMode
++                        implicitWidth: 28
++                        implicitHeight: 28
++                        iconSize: 16
++                        enableShadow: false
++                        radius: Styling.radius(2)
++                        buttonIcon: KpoppingService.ytPaused ? Icons.play : Icons.pause
++                        tooltipText: KpoppingService.ytPaused ? "Play" : "Pause"
++                        onToggle: function () { KpoppingService.ytTogglePause(); }
++                    }
++
++                    ToggleButton {
++                        visible: !kpPreview.photoMode
++                        implicitWidth: 28
++                        implicitHeight: 28
++                        iconSize: 16
++                        enableShadow: false
 +                        radius: Styling.radius(2)
 +                        buttonIcon: KpoppingService.ytMuted ? Icons.speakerSlash : Icons.speakerHigh
 +                        tooltipText: KpoppingService.ytMuted ? "Unmute" : "Mute"
@@ -479,8 +566,10 @@ index c75a7ad..fa0f691 100644
 +
 +                    ToggleButton {
 +                        visible: !kpPreview.photoMode && (KpoppingService.ytCount > 1 || KpoppingService.ytQueue.length > 0)
-+                        implicitWidth: 32
-+                        implicitHeight: 32
++                        implicitWidth: 28
++                        implicitHeight: 28
++                        iconSize: 16
++                        enableShadow: false
 +                        radius: Styling.radius(2)
 +                        buttonIcon: Icons.next
 +                        tooltipText: "Next video"
@@ -489,8 +578,10 @@ index c75a7ad..fa0f691 100644
 +
 +                    ToggleButton {
 +                        visible: !kpPreview.photoMode
-+                        implicitWidth: 32
-+                        implicitHeight: 32
++                        implicitWidth: 28
++                        implicitHeight: 28
++                        iconSize: 16
++                        enableShadow: false
 +                        radius: Styling.radius(2)
 +                        buttonIcon: Icons.stop
 +                        tooltipText: "Stop the video wallpaper"
@@ -499,8 +590,10 @@ index c75a7ad..fa0f691 100644
 +
 +                    ToggleButton {
 +                        visible: kpPreview.photoMode
-+                        implicitWidth: 32
-+                        implicitHeight: 32
++                        implicitWidth: 28
++                        implicitHeight: 28
++                        iconSize: 16
++                        enableShadow: false
 +                        radius: Styling.radius(2)
 +                        enabled: KpoppingService.previewing
 +                        buttonIcon: Icons.accept
@@ -510,8 +603,10 @@ index c75a7ad..fa0f691 100644
 +
 +                    ToggleButton {
 +                        visible: kpPreview.photoMode
-+                        implicitWidth: 32
-+                        implicitHeight: 32
++                        implicitWidth: 28
++                        implicitHeight: 28
++                        iconSize: 16
++                        enableShadow: false
 +                        radius: Styling.radius(2)
 +                        buttonIcon: Icons.cancel
 +                        tooltipText: "Drop: back to your wallpaper and the picker"

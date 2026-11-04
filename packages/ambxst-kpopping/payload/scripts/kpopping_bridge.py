@@ -31,8 +31,15 @@ yt-player: YouTube refuses mpv's own stream fetches (403 since late 2026), while
   one video at a time: yt-dlp -o - into the pipe, nothing on disk. queue.json:
   {"fifo", "format", "queue": [{"url", "title"}], "start", "mix": bool, "options": <json with loop/shuffle>,
    "upnext": <json list of {"url", "title"}>}. Up next (popped from its file) plays first, ahead of Loop;
-  then the list carries on. Loop/shuffle are re-read before every video. SIGUSR1 = next video.
+  then the list carries on. Loop/shuffle are re-read before every video. SIGUSR1 = next video,
+  SIGUSR2 = previous video. With PyGObject, it also is the MPRIS player "YouTube wallpaper"
+  (media keys, Ambxst's media widgets): play/pause, next, previous, stop, title and thumbnail.
+  yt-dlp merges through ffmpeg; YouTube resets a connection held open while the pipe is full (the
+  audio stopped mid-video), so ffmpeg is told to reconnect and resume.
   Exits (and quits the player) when done; exits quietly when the player is gone.
+  SIGHUP = hide: writes "state" ({queue, i, from_list, item, output, seek, hidden, time}) with the position,
+  quits the player and exits. A resume passes "first_item" / "from_list" / "seek" back in; the
+  first video then starts there (yt-dlp --download-sections, from the next keyframe).
 
 fit: writes skwd-wall's display.fillMode / display.backgroundMode before an apply.
   auto = landscape images fill the screen, portrait and square ones are shown whole.
@@ -434,6 +441,107 @@ def _mpv_alive():
         return False
 
 
+MPRIS_XML = """<node>
+ <interface name="org.mpris.MediaPlayer2">
+  <method name="Raise"/><method name="Quit"/>
+  <property name="CanQuit" type="b" access="read"/><property name="CanRaise" type="b" access="read"/>
+  <property name="HasTrackList" type="b" access="read"/><property name="Identity" type="s" access="read"/>
+  <property name="SupportedUriSchemes" type="as" access="read"/><property name="SupportedMimeTypes" type="as" access="read"/>
+ </interface>
+ <interface name="org.mpris.MediaPlayer2.Player">
+  <method name="Next"/><method name="Previous"/><method name="Pause"/><method name="PlayPause"/>
+  <method name="Stop"/><method name="Play"/>
+  <method name="Seek"><arg direction="in" type="x"/></method>
+  <method name="SetPosition"><arg direction="in" type="o"/><arg direction="in" type="x"/></method>
+  <method name="OpenUri"><arg direction="in" type="s"/></method>
+  <property name="PlaybackStatus" type="s" access="read"/><property name="Metadata" type="a{sv}" access="read"/>
+  <property name="Position" type="x" access="read"/><property name="Rate" type="d" access="read"/>
+  <property name="MinimumRate" type="d" access="read"/><property name="MaximumRate" type="d" access="read"/>
+  <property name="Volume" type="d" access="read"/>
+  <property name="CanGoNext" type="b" access="read"/><property name="CanGoPrevious" type="b" access="read"/>
+  <property name="CanPlay" type="b" access="read"/><property name="CanPause" type="b" access="read"/>
+  <property name="CanSeek" type="b" access="read"/><property name="CanControl" type="b" access="read"/>
+ </interface>
+</node>"""
+
+
+def _mpris(state):
+    """Media keys / Ambxst's media widgets control the wallpaper. Optional: needs PyGObject."""
+    try:
+        import threading
+        import gi
+        gi.require_version("Gio", "2.0")
+        from gi.repository import Gio, GLib
+    except Exception:
+        return
+    node = Gio.DBusNodeInfo.new_for_xml(MPRIS_XML)
+    shown = {"status": None, "meta": None}
+
+    def prop(name):
+        status = "Playing"
+        try:
+            status = "Paused" if json.loads(mpv(["get_property", "pause"])).get("data") else "Playing"
+        except (OSError, ValueError):
+            pass
+        item = state.get("item") or {}
+        vid = item.get("url", "").rsplit("v=", 1)[-1][:11]
+        meta = {"mpris:trackid": GLib.Variant("o", "/org/ambxst/kpopping/track/" + (re.sub(r"\W", "_", vid) or "none")),
+                "xesam:title": GLib.Variant("s", item.get("title", "")),
+                "xesam:artist": GLib.Variant("as", [item.get("channel") or "YouTube"])}
+        if vid:
+            meta["mpris:artUrl"] = GLib.Variant("s", f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg")
+        values = {"CanQuit": GLib.Variant("b", False), "CanRaise": GLib.Variant("b", False),
+                  "HasTrackList": GLib.Variant("b", False), "Identity": GLib.Variant("s", "YouTube wallpaper"),
+                  "SupportedUriSchemes": GLib.Variant("as", []), "SupportedMimeTypes": GLib.Variant("as", []),
+                  "PlaybackStatus": GLib.Variant("s", status), "Metadata": GLib.Variant("a{sv}", meta),
+                  "Position": GLib.Variant("x", 0), "Rate": GLib.Variant("d", 1.0), "MinimumRate": GLib.Variant("d", 1.0),
+                  "MaximumRate": GLib.Variant("d", 1.0), "Volume": GLib.Variant("d", 1.0),
+                  "CanGoNext": GLib.Variant("b", True), "CanGoPrevious": GLib.Variant("b", True),
+                  "CanPlay": GLib.Variant("b", True), "CanPause": GLib.Variant("b", True),
+                  "CanSeek": GLib.Variant("b", False), "CanControl": GLib.Variant("b", True)}
+        return values.get(name) if name else values
+
+    def call(conn, sender, path, iface, method, params, invocation):
+        try:
+            if method == "PlayPause":
+                mpv(["cycle", "pause"])
+            elif method == "Play":
+                mpv(["set_property", "pause", False])
+            elif method == "Pause":
+                mpv(["set_property", "pause", True])
+            elif method == "Next":
+                os.kill(os.getpid(), signal.SIGUSR1)
+            elif method == "Previous":
+                os.kill(os.getpid(), signal.SIGUSR2)
+            elif method in ("Stop", "Quit"):
+                os.kill(os.getpid(), signal.SIGHUP)  # hide, remembering where it was
+        except OSError:
+            pass
+        invocation.return_value(None)
+
+    def get(conn, sender, path, iface, name):
+        return prop(name)
+
+    def bus_acquired(conn, name):
+        for iface in node.interfaces:
+            conn.register_object("/org/mpris/MediaPlayer2", iface, call, get, None)
+
+        def tick():  # tell listeners about a new video or play/pause
+            values = prop(None)
+            status, meta = values["PlaybackStatus"].unpack(), values["Metadata"].unpack().get("xesam:title")
+            if (status, meta) != (shown["status"], shown["meta"]):
+                shown["status"], shown["meta"] = status, meta
+                conn.emit_signal(None, "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                                 GLib.Variant("(sa{sv}as)", ("org.mpris.MediaPlayer2.Player",
+                                                             {"PlaybackStatus": values["PlaybackStatus"], "Metadata": values["Metadata"]}, [])))
+            return True
+        GLib.timeout_add(700, tick)
+
+    Gio.bus_own_name(Gio.BusType.SESSION, "org.mpris.MediaPlayer2.ambxst_kpopping",
+                     Gio.BusNameOwnerFlags.REPLACE | Gio.BusNameOwnerFlags.ALLOW_REPLACEMENT, bus_acquired, None, None)
+    threading.Thread(target=GLib.MainLoop().run, daemon=True).start()
+
+
 def _pop_upnext(path):
     """First video of the up-next queue (the shell's Ctrl+click), removed from the file."""
     if not path:
@@ -462,10 +570,11 @@ def yt_player(queue_file):
                                  capture_output=True, text=True, timeout=90)
             for e in (json.loads(out.stdout).get("entries") or [])[1:]:
                 if e.get("id") and len(e["id"]) == 11:
-                    queue.append({"url": f"https://www.youtube.com/watch?v={e['id']}", "title": e.get("title") or e["id"]})
+                    queue.append({"url": f"https://www.youtube.com/watch?v={e['id']}", "title": e.get("title") or e["id"],
+                                  "channel": e.get("channel") or e.get("uploader") or ""})
         except Exception:
             pass  # the clicked video still plays (and loops)
-    state = {"skip": False, "child": None}
+    state = {"skip": False, "back": False, "child": None, "item": None}
 
     def next_video(*_):
         state["skip"] = True
@@ -474,7 +583,40 @@ def yt_player(queue_file):
                 os.killpg(state["child"].pid, signal.SIGKILL)
             except OSError:
                 pass
+
+    def previous_video(*_):
+        state["back"] = True
+        next_video()
+    state_file = Path(cfg["state"]) if cfg.get("state") else None
+
+    def save_state(seek=0.0, hidden=False):
+        if state_file and state.get("cur"):
+            item_, from_list_, i_ = state["cur"]
+            save(state_file, {"queue": queue, "i": i_, "from_list": from_list_, "item": item_, "output": cfg.get("output", ""),
+                              "seek": max(0, int(seek)), "hidden": hidden, "time": time.time()})
+
+    def hide(*_):
+        """Stop, remembering the video, its position and the list (Ambxst offers to resume)."""
+        pos = 0.0
+        try:
+            pos = json.loads(mpv(["get_property", "time-pos"])).get("data") or 0.0
+        except (OSError, ValueError):
+            pass
+        save_state(state.get("offset", 0) + pos - 2, hidden=True)  # a little before, for context
+        try:
+            mpv(["quit"])
+        except OSError:
+            pass
+        if state["child"]:
+            try:
+                os.killpg(state["child"].pid, signal.SIGKILL)
+            except OSError:
+                pass
+        os._exit(0)
     signal.signal(signal.SIGUSR1, next_video)
+    signal.signal(signal.SIGUSR2, previous_video)
+    signal.signal(signal.SIGHUP, hide)
+    _mpris(state)
     signal.signal(signal.SIGTERM, lambda *_: (next_video(), sys.exit(0)))
 
     def call(command, tries=8):
@@ -505,6 +647,10 @@ def yt_player(queue_file):
 
     i = max(0, min(cfg.get("start", 0), len(queue) - 1))
     item, from_list, gone = (queue[i] if queue else _pop_upnext(upnext)), True, False
+    if cfg.get("first_item"):  # resuming an Up next video that isn't in the list
+        item, from_list = cfg["first_item"], bool(cfg.get("from_list"))
+    seek = float(cfg.get("seek") or 0)  # resuming: the first video starts here
+    history = []  # (item, from_list, i) played before the current one, for Previous
     try:
         while item:
             try:
@@ -513,7 +659,9 @@ def yt_player(queue_file):
             except OSError:
                 gone = True
                 return 0
-            state["skip"] = False
+            state["skip"], state["back"], state["item"] = False, False, item
+            state["cur"], state["offset"] = (item, from_list, i), seek
+            save_state(seek)
             fd = None
             while fd is None and not state["skip"]:  # the player opens the pipe when it's ready to read
                 try:
@@ -528,7 +676,11 @@ def yt_player(queue_file):
             started, code = time.time(), 0
             if fd is not None:
                 fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) & ~os.O_NONBLOCK)
-                state["child"] = subprocess.Popen(["yt-dlp", "-q", "--no-warnings", "-f", fmt, "-o", "-", "--", item["url"]],
+                section = ["--download-sections", f"*{int(seek)}-inf"] if seek > 0 else []
+                seek = 0  # only the first video resumes mid-way
+                state["child"] = subprocess.Popen(["yt-dlp", "-q", "--no-warnings", "-f", fmt, *section,
+                                                   "--downloader-args", "ffmpeg_i:-reconnect 1 -reconnect_on_network_error 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+                                                   "-o", "-", "--", item["url"]],
                                                   stdout=fd, stderr=subprocess.DEVNULL, start_new_session=True)
                 os.close(fd)
                 code = state["child"].wait()
@@ -539,6 +691,11 @@ def yt_player(queue_file):
                 return 0
             if code != 0 and not skipped and time.time() - started < 5:
                 time.sleep(5)  # failing fast (network down, video gone): don't spin
+            if state["back"]:  # Previous: the video before this one (or this one again from the start)
+                if history:
+                    item, from_list, i = history.pop()
+                continue
+            history = (history + [(item, from_list, i)])[-50:]
             opts = load(Path(cfg["options"]), {})
             repeat = opts.get("loop") and not skipped
             if from_list and not repeat and queue:  # leaving a list video: move on in the list
