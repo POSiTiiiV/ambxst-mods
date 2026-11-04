@@ -5,6 +5,10 @@ usage:
   kpopping_bridge.py search <query> [--orient landscape,portrait,square] [--res sd,hd,fhd,2k,4k,8k]
                                     [--pages N] [--entity idol:<id>|group:<id>] [--tagged] [--sort hot|new|top]
   kpopping_bridge.py fit <image> <auto|fill|fit|stretch|center|tile> <blur|color>
+  kpopping_bridge.py yt <search words | youtube video/playlist link> [--pages N]
+  kpopping_bridge.py mpv <json command array>        e.g. mpv '["cycle","mute"]'
+  kpopping_bridge.py mpv-watch                       stream the player's title/mute/pause as JSON lines
+  kpopping_bridge.py yt-player <queue.json>          feed the queue into the player's pipe, one video at a time
 
 search: --orient / --res chips are OR'd within a group, the groups AND'd; empty = any.
   Resolution buckets go by the longer edge: hd >= 1280, fhd >= 1920, 2k >= 2560, 4k >= 3840, 8k >= 7680.
@@ -18,6 +22,18 @@ search: --orient / --res chips are OR'd within a group, the groups AND'd; empty 
        a photo's "thumb" is set when already cached
     2. then {"thumb": <src>, "url": <file:// or remote>} as missing thumbnails finish
 
+yt: lists videos through yt-dlp (search: 30 per page; a link: every video in it), same result line
+  as search ("photos" with src = watch URL, thumb = i.ytimg.com URL), "list": true for a link.
+  mpv / mpv-watch talk to the YouTube wallpaper player's IPC socket ($XDG_RUNTIME_DIR/ambxst-kpopping-mpv.sock).
+
+yt-player: YouTube refuses mpv's own stream fetches (403 since late 2026), while yt-dlp's downloader
+  works. So the player (mpvpaper, ytdl=no, loop-playlist=force) reads a named pipe, and this feeds it
+  one video at a time: yt-dlp -o - into the pipe, nothing on disk. queue.json:
+  {"fifo", "format", "queue": [{"url", "title"}], "start", "mix": bool, "options": <json with loop/shuffle>,
+   "upnext": <json list of {"url", "title"}>}. Up next (popped from its file) plays first, ahead of Loop;
+  then the list carries on. Loop/shuffle are re-read before every video. SIGUSR1 = next video.
+  Exits (and quits the player) when done; exits quietly when the player is gone.
+
 fit: writes skwd-wall's display.fillMode / display.backgroundMode before an apply.
   auto = landscape images fill the screen, portrait and square ones are shown whole.
 
@@ -26,10 +42,17 @@ until the album grows), idols' groups, and thumbnails (pruned after 30 days unus
 puts full-size previews in full/ (pruned after 7 days unless one is still your wallpaper).
 Stdlib only, public API, no cookies.
 """
+import errno
+import fcntl
 import hashlib
 import json
 import os
+import random
+import re
+import signal
+import socket
 import struct
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -325,11 +348,229 @@ def fit(image, mode, background):
     return 0
 
 
+# ── youtube ──────────────────────────────────────────────────────────────
+
+MPV_SOCKET = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "ambxst-kpopping-mpv.sock"
+YT_LINK = re.compile(r"^https?://((www|m|music)\.)?(youtube\.com|youtu\.be)/\S+$")
+
+
+def yt(query, pages):
+    query = query.strip()
+    link = bool(YT_LINK.match(query))
+    target = query if link else f"ytsearch{PAGE * pages}:{query}"
+    # "--" ends options: a search/link can't smuggle yt-dlp flags in
+    run = subprocess.run(["yt-dlp", "--flat-playlist", "-J", "--no-warnings", "--", target],
+                         capture_output=True, text=True, timeout=90)
+    if run.returncode != 0:
+        msg = (run.stderr.strip().splitlines() or ["yt-dlp failed"])[-1]
+        return {"status": "error", "message": msg.replace("ERROR: ", "")}
+    data = json.loads(run.stdout)
+    entries = data.get("entries") if data.get("_type") == "playlist" else [data]
+    photos = []
+    for e in entries or []:
+        vid = e.get("id")
+        if not vid or len(vid) != 11:  # channels/shorts shelves in search results
+            continue
+        photos.append({"src": f"https://www.youtube.com/watch?v={vid}", "id": vid, "title": e.get("title") or vid,
+                       "channel": e.get("channel") or e.get("uploader") or "", "duration": int(e.get("duration") or 0),
+                       "thumb": f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg"})
+    return {"status": "ok" if photos else "error", "message": "" if photos else "No videos found",
+            "photos": photos, "list": link and len(photos) > 1, "more": not link and len(entries or []) >= PAGE * pages}
+
+
+def mpv(command):
+    with socket.socket(socket.AF_UNIX) as s:
+        s.settimeout(3)
+        s.connect(str(MPV_SOCKET))
+        s.sendall(json.dumps({"command": command}).encode() + b"\n")
+        return s.makefile().readline().strip()
+
+
+def mpv_watch():
+    """Follows the player until it quits: one JSON line per change of the watched properties."""
+    for _ in range(60):  # the player opens its socket a moment after it starts
+        try:
+            s = socket.socket(socket.AF_UNIX)
+            s.connect(str(MPV_SOCKET))
+            break
+        except OSError:
+            s.close()
+            time.sleep(0.25)
+    else:
+        return 1
+    with s:
+        for i, prop in enumerate(("media-title", "mute", "pause", "user-data/kpopping/count"), 1):
+            s.sendall(json.dumps({"command": ["observe_property", i, prop]}).encode() + b"\n")
+        for line in s.makefile():
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("event") == "property-change":
+                emit({"prop": ev.get("name"), "value": ev.get("data")})
+    return 0
+
+
+def _mpv_alive():
+    try:
+        mpv(["get_property", "pid"])
+        return True
+    except OSError:
+        return False
+
+
+def _pop_upnext(path):
+    """First video of the up-next queue (the shell's Ctrl+click), removed from the file."""
+    if not path:
+        return None
+    items = load(Path(path), [])
+    if not items:
+        return None
+    save(Path(path), items[1:])
+    return items[0]
+
+
+def yt_player(queue_file):
+    cfg = json.loads(Path(queue_file).read_text())
+    fifo, fmt, queue, upnext = cfg["fifo"], cfg["format"], cfg["queue"], cfg.get("upnext")
+    # the player is started at the same moment: wait for its socket (losing this race used to end
+    # the feeder at once, leaving an idle player the notch showed as playing)
+    for _ in range(60):
+        if _mpv_alive():
+            break
+        time.sleep(0.25)
+    else:
+        return 0
+    if cfg.get("mix") and queue:  # YouTube's Mix after the clicked video, like YouTube's autoplay
+        try:
+            out = subprocess.run(["yt-dlp", "--flat-playlist", "-J", "--playlist-end", "50", "--no-warnings", "--", queue[0]["mix"]],
+                                 capture_output=True, text=True, timeout=90)
+            for e in (json.loads(out.stdout).get("entries") or [])[1:]:
+                if e.get("id") and len(e["id"]) == 11:
+                    queue.append({"url": f"https://www.youtube.com/watch?v={e['id']}", "title": e.get("title") or e["id"]})
+        except Exception:
+            pass  # the clicked video still plays (and loops)
+    state = {"skip": False, "child": None}
+
+    def next_video(*_):
+        state["skip"] = True
+        if state["child"]:
+            try:
+                os.killpg(state["child"].pid, signal.SIGKILL)
+            except OSError:
+                pass
+    signal.signal(signal.SIGUSR1, next_video)
+    signal.signal(signal.SIGTERM, lambda *_: (next_video(), sys.exit(0)))
+
+    def call(command, tries=8):
+        """mpv IPC that rides out a brief hiccup; OSError only when the player is really gone."""
+        for n in range(tries):
+            try:
+                return mpv(command)
+            except OSError:
+                if n == tries - 1:
+                    raise
+                time.sleep(0.25)
+
+    def finish(skipped):
+        """Wait until the player is done with the current video (drop it on Next); None if it's gone."""
+        if skipped:
+            call(["loadfile", fifo, "replace"])
+        while True:
+            if state["skip"]:  # Next while the player still plays what it buffered
+                state["skip"], skipped = False, True
+                call(["loadfile", fifo, "replace"])
+            try:
+                reply = json.loads(call(["get_property", "time-pos"]))
+            except (OSError, ValueError):
+                return None
+            if reply.get("error") != "success":  # reopening the pipe: ready for the next video
+                return skipped
+            time.sleep(0.3)
+
+    i = max(0, min(cfg.get("start", 0), len(queue) - 1))
+    item, from_list, gone = (queue[i] if queue else _pop_upnext(upnext)), True, False
+    try:
+        while item:
+            try:
+                call(["set_property", "force-media-title", item["title"]])
+                call(["set_property", "user-data/kpopping/count", len(queue) + len(load(Path(upnext), [])) if upnext else len(queue)])
+            except OSError:
+                gone = True
+                return 0
+            state["skip"] = False
+            fd = None
+            while fd is None and not state["skip"]:  # the player opens the pipe when it's ready to read
+                try:
+                    fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+                except OSError as e:
+                    if e.errno != errno.ENXIO:
+                        raise
+                    if not _mpv_alive():
+                        gone = True
+                        return 0
+                    time.sleep(0.2)
+            started, code = time.time(), 0
+            if fd is not None:
+                fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) & ~os.O_NONBLOCK)
+                state["child"] = subprocess.Popen(["yt-dlp", "-q", "--no-warnings", "-f", fmt, "-o", "-", "--", item["url"]],
+                                                  stdout=fd, stderr=subprocess.DEVNULL, start_new_session=True)
+                os.close(fd)
+                code = state["child"].wait()
+                state["child"] = None
+            skipped = finish(state["skip"])
+            if skipped is None:
+                gone = True
+                return 0
+            if code != 0 and not skipped and time.time() - started < 5:
+                time.sleep(5)  # failing fast (network down, video gone): don't spin
+            opts = load(Path(cfg["options"]), {})
+            repeat = opts.get("loop") and not skipped
+            if from_list and not repeat and queue:  # leaving a list video: move on in the list
+                if opts.get("shuffle") and len(queue) > 1:
+                    i = random.choice([n for n in range(len(queue)) if n != i])
+                else:
+                    i = (i + 1) % len(queue)
+            queued = _pop_upnext(upnext)  # Up next comes first, ahead of Loop
+            if queued:
+                item, from_list = queued, False
+            elif repeat:
+                pass  # same video again
+            else:
+                item, from_list = (queue[i] if queue else None), True
+        return 0
+    finally:
+        if not gone:  # stopping for any other reason: don't leave an idle player behind
+            try:
+                mpv(["quit"])
+            except OSError:
+                pass
+
+
 # ── cli ──────────────────────────────────────────────────────────────────
 
 def main(argv):
     if len(argv) == 4 and argv[0] == "fit":
         return fit(*argv[1:])
+    if argv[:1] == ["mpv-watch"]:
+        return mpv_watch()
+    if len(argv) == 2 and argv[0] == "yt-player":
+        return yt_player(argv[1])
+    if len(argv) == 2 and argv[0] == "mpv":
+        try:
+            print(mpv(json.loads(argv[1])))
+            return 0
+        except (OSError, ValueError) as e:
+            print(json.dumps({"error": str(e)}))
+            return 1
+    if len(argv) >= 2 and argv[0] == "yt":
+        pages = max(1, int(argv[argv.index("--pages") + 1])) if "--pages" in argv[:-1] else 1
+        try:
+            out = yt(argv[1], pages)
+        except Exception as e:
+            out = {"status": "error", "message": str(e)}
+        emit({**out, "totalFound": len(out.get("photos", [])), "query": argv[1], "pages": pages, "key": "yt|"})
+        return 0
     if len(argv) < 2 or argv[0] != "search":
         print(__doc__, file=sys.stderr)
         return 2
@@ -381,6 +622,8 @@ if __name__ == "__main__":
     assert save_path({}, {"type": "group", "id": "z", "name": "IZ*ONE"}, src) == "IZ*ONE/mix/IZ*ONE_undated_8g362k-6.jpg"
     assert save_path({"idolName": "IU", "idolId": "i"}, {"type": "idol", "id": "i", "name": "IU"}, src).startswith("IU/IU_")
     assert clean("../..") == "misc" and clean("a/b") == "ab"
+    assert YT_LINK.match("https://youtube.com/playlist?list=PLx") and YT_LINK.match("https://youtu.be/abcdefghijk")
+    assert not YT_LINK.match("--exec rm") and not YT_LINK.match("https://evil.example/youtube.com/x")
     assert [orientation(*s) for s in ((1920, 1080), (1080, 1350), (1000, 1000))] == ["landscape", "portrait", "square"]
     assert [resolution(*s) for s in ((1024, 682), (1080, 1920), (2592, 1944), (4096, 3072), (8000, 6000))] == ["sd", "fhd", "2k", "4k", "8k"]
     sys.exit(main(sys.argv[1:]))

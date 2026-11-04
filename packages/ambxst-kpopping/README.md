@@ -1,6 +1,9 @@
 # Kpopping Online Wallpapers for Ambxst
 
-Browse [kpopping.com](https://kpopping.com) from Ambxst's Wallpapers tab. Search an idol or group, filter by orientation and resolution, try a photo on your real desktop, and keep the ones you like. Kept photos go into your wallpaper library like any other wallpaper.
+Online wallpapers in Ambxst's Wallpapers tab:
+
+- **kpopping.com photos:** search an idol or group, filter by orientation and resolution, try a photo on your real desktop, and keep the ones you like. Kept photos go into your wallpaper library like any other wallpaper.
+- **YouTube videos as a live wallpaper:** search or paste a link, build your own playlist, loop, shuffle or autoplay related videos. See [YouTube wallpapers](#youtube-wallpapers).
 
 Requires [`drpezzer.ambxst-skwd-wall`](https://github.com/drpezzer/ambxst-mods/tree/main/packages/ambxst-skwd-wall). This mod's patch is written on top of skwd-wall's changes to the Wallpapers tab.
 
@@ -12,13 +15,13 @@ ambxst mods enable positive.ambxst-kpopping
 ambxst reload
 ```
 
-Needs `python3` (standard library only), `curl` and `sh`. Nothing to configure, and no login.
+Needs `python3` (standard library only), `curl` and `sh`. Nothing to configure, and no login. YouTube mode also needs `mpv`, `yt-dlp` and [`mpvpaper`](https://github.com/GhostNaN/mpvpaper). Without them, only that mode fails to play.
 
 ## Using it
 
 | | |
 |---|---|
-| **Globe button** (end of the top row) | Switches the grid between your local library and kpopping.com. |
+| **Globe button** (end of the top row) | Switches the grid between your local library and kpopping.com. The **▶** next to it does the same for YouTube. |
 | **Search box** | Finds an idol or group: `Karina`, `aespa`, `Chaewon`, `ITZY`, ... The best match is picked (a group with exactly that name, else the most popular idol whose name contains it). The last search, its results and the filters stay until the shell restarts. |
 | **Chips under the box** | **Empty box:** your recent searches, one click to search again. **Several matches** (nine idols are called Chaewon): one chip per match, like `Kim Chaewon · IZ*ONE` / `ChaeWon · tripleS`. Click one to switch. **Order:** Hot (default) / Newest / Most liked (all time). These are the only orders kpopping's API has; it has no view counts. **Filters:** Landscape / Portrait / Square, SD / HD / FHD / 2K / 4K / 8K, and for idols **+ Tagged**. |
 | **Scrolling** | The next 30 posts load as you reach the bottom, so you can go through every post an idol has (Karina has ~1,200). A strict filter loads a few more pages on its own. |
@@ -27,6 +30,41 @@ Needs `python3` (standard library only), `curl` and `sh`. Nothing to configure, 
 | **Label** under the highlighted photo | `width×height · 26 likes · title`, so low-resolution shots are easy to spot. |
 
 **+ Tagged:** kpopping lists a post under every idol tagged in it. Ryujin's feed includes "Yuna Instagram Update with Ryujin & Lia", for example. By default, an idol search only shows posts where that idol is the main one. Turn on **+ Tagged** to include the rest. Those photos are saved under their main idol (`ITZY/Yuna/`).
+
+## YouTube wallpapers
+
+Press **▶** at the end of the top row, then search, or paste a YouTube video or playlist link.
+
+| | |
+|---|---|
+| **Click / Enter** | Plays the video as your wallpaper and closes the dashboard. What comes after it is described below. |
+| **Shift+click / Shift+Enter** | Adds the video to **My playlist** (kept for good), or removes it there. |
+| **Ctrl+click / Ctrl+P** | Adds the video to **Up next**: it plays after the current video, ahead of everything else. With nothing playing, it plays now. |
+| **▶ Play My playlist** chip | Plays your playlist, and only it, from the top (Shuffle: from a random video). |
+| **My playlist (N)** chip | Shows your playlist in the grid. Click a video to play the playlist from there. Typing a search goes back to results. Saved in `~/.config/ambxst/kpopping-youtube.json`. |
+| **Up next (N)** chip | Shows the queue. Click one to play it now; Shift+ or Ctrl+click removes it. The queue empties as videos play. |
+| **Loop video** | Repeats the current video instead of moving on. Also applies to the video that's playing. |
+| **Shuffle** | Shuffles the playlist. Also applies to the one that's playing. |
+| **Autoplay** (on by default) | After a search result, keeps going with YouTube's Mix of related videos, like YouTube's own autoplay. Off: that one video loops. |
+| **Notch** | While a video plays: its title, **mute/unmute**, **next** (in a list) and **stop**. Mute and volume are the same setting as skwd-wall's video wallpapers (Wallpaper settings), both ways. |
+
+- **Quality** (Settings → Mods → Kpopping): *Auto* (default) fetches at most your screen's resolution. *Best available*, or a cap at 2160p / 1440p / 1080p / 720p. At that size VP9, then H.264, are preferred over AV1, because most GPUs decode them in hardware. Motion is smoothed for 60 fps video on high-refresh screens.
+- **Pause YouTube wallpaper when covered** (off by default): pause while a fullscreen window covers the screen, and in game mode. This is the same rule skwd-wall uses for video wallpapers.
+**What plays after the current video (and on next ⏭):**
+
+1. **Up next** comes first.
+2. Then **Loop video** replays the current one.
+3. Otherwise the list goes on:
+   - **My playlist** (▶ Play My playlist, or a click in its view): the next video in it.
+   - **A pasted playlist link:** its next video.
+   - **A search result:** with **Autoplay** on, YouTube's Mix of related videos (like YouTube's own autoplay); off, it repeats.
+
+Lists loop when they reach the end.
+- The video streams through mpvpaper on the layer just above skwd-wall. YouTube refuses mpv's own stream fetches (HTTP 403), so yt-dlp downloads each video straight into a pipe the player reads. Nothing is saved to disk. A video starts after ~5–10 s.
+- The player runs on its own, so `ambxst reload` doesn't stop it. Choosing any other wallpaper does (picker, kpopping preview, rotation), and so does **stop** in the notch.
+- In per-screen mode it plays on that screen, otherwise on all of them.
+- With Ambxst's desktop icons on, the video covers them (they share its layer).
+- Colours stay those of your wallpaper underneath.
 
 ## Where photos go
 
@@ -88,8 +126,9 @@ Stock Ambxst unloads every thumbnail in the Wallpapers grid when the dashboard c
 - `payload/scripts/kpopping_bridge.py` uses kpopping's public JSON API (`/api/search/entities`, `/api/photos`, `/api/kpics/<id>`) with a plain, honest user agent. It sends no cookies and doesn't log in. It prints one JSON line per event (progress, results, each thumbnail) so the grid fills in as things arrive. You can also run it yourself:
   `python3 kpopping_bridge.py search Karina --orient landscape --res 4k,8k --pages 2`
 - `payload/modules/services/KpoppingService.qml` runs the bridge, keeps state across dashboard opens, and downloads full-size photos with `curl`. It saves and applies them through Ambxst's normal `setWallpaper`, so matugen colours and skwd-wall transitions work as usual.
-- `patches/kpopping-tab.patch` adds the globe button, chips, infinite scroll and download spinners (`WallpapersTab.qml`, `FilterBar.qml`), the ✓/✗ preview strip in the notch (`DefaultView.qml`), and the fit step before skwd-wall's applies (`SkwdWall.qml`).
+- `patches/kpopping-tab.patch` adds the globe / ▶ buttons, chips, infinite scroll and download spinners (`WallpapersTab.qml`, `FilterBar.qml`), the ✓/✗ preview strip and YouTube controls in the notch (`DefaultView.qml`), and the fit step before skwd-wall's applies (`SkwdWall.qml`).
+- YouTube: `kpopping_bridge.py yt` lists videos with `yt-dlp --flat-playlist` (search words go after `--`, so they can't become options). Playback: `setsid mpvpaper -l bottom` reads the named pipe `$XDG_RUNTIME_DIR/ambxst-kpopping-stream`, and `kpopping_bridge.py yt-player` feeds it one video at a time with `yt-dlp -o -` (Next = SIGUSR1). Both are controlled and followed through mpv's IPC socket `$XDG_RUNTIME_DIR/ambxst-kpopping-mpv.sock` (`kpopping_bridge.py mpv` / `mpv-watch`).
 
 ## License
 
-MIT. Photos belong to their owners and uploaders on kpopping.com.
+MIT. Photos belong to their owners and uploaders on kpopping.com; videos to theirs on YouTube.

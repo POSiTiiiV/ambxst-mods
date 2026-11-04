@@ -9,13 +9,34 @@
       "type": "enum",
       "default": "auto",
       "options": [
-        { "label": "Auto (portrait shown whole)", "value": "auto" },
-        { "label": "Fill (crop to the screen)", "value": "fill" },
-        { "label": "Fit (whole image)", "value": "fit" },
-        { "label": "Stretch", "value": "stretch" },
-        { "label": "Center (original size)", "value": "center" },
-        { "label": "Tile", "value": "tile" },
-        { "label": "Leave it to skwd-wall", "value": "skwd" }
+        {
+          "label": "Auto (portrait shown whole)",
+          "value": "auto"
+        },
+        {
+          "label": "Fill (crop to the screen)",
+          "value": "fill"
+        },
+        {
+          "label": "Fit (whole image)",
+          "value": "fit"
+        },
+        {
+          "label": "Stretch",
+          "value": "stretch"
+        },
+        {
+          "label": "Center (original size)",
+          "value": "center"
+        },
+        {
+          "label": "Tile",
+          "value": "tile"
+        },
+        {
+          "label": "Leave it to skwd-wall",
+          "value": "skwd"
+        }
       ]
     },
     {
@@ -25,9 +46,55 @@
       "type": "enum",
       "default": "blur",
       "options": [
-        { "label": "Blurred copy of the image", "value": "blur" },
-        { "label": "Solid colour (skwd-wall's fill colour)", "value": "color" }
+        {
+          "label": "Blurred copy of the image",
+          "value": "blur"
+        },
+        {
+          "label": "Solid colour (skwd-wall's fill colour)",
+          "value": "color"
+        }
       ]
+    },
+    {
+      "key": "ytQuality",
+      "label": "YouTube wallpaper quality",
+      "description": "Auto fetches at most your screen's resolution: more pixels than the screen has only cost decoding power. VP9 and H.264 are preferred over AV1 at that size, since many GPUs decode them in hardware but not AV1.",
+      "type": "enum",
+      "default": "auto",
+      "options": [
+        {
+          "label": "Auto (match the screen)",
+          "value": "auto"
+        },
+        {
+          "label": "Best available",
+          "value": "best"
+        },
+        {
+          "label": "Up to 2160p (4K)",
+          "value": "2160"
+        },
+        {
+          "label": "Up to 1440p",
+          "value": "1440"
+        },
+        {
+          "label": "Up to 1080p",
+          "value": "1080"
+        },
+        {
+          "label": "Up to 720p",
+          "value": "720"
+        }
+      ]
+    },
+    {
+      "key": "ytPause",
+      "label": "Pause YouTube wallpaper when covered",
+      "description": "Pause the video while a fullscreen window (or, with skwd-wall's 'maximized' pause mode, a maximized one) covers its screen, and in game mode. Off: it keeps playing.",
+      "type": "boolean",
+      "default": false
     }
   ]
 }
