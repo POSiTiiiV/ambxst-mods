@@ -131,6 +131,7 @@ Singleton {
             return (!_query && !ytListView && !ytQueueView ? recent.map(q => ({ label: q, type: "recent:" + q })) : [])
                 .concat(ytResume && !ytPlaying ? [{ label: "⏵ Resume: " + ytResume.item.title, type: "yt:resume" }] : [],
                         ytPlaylist.length ? [{ label: "▶ Play My playlist", type: "yt:playall" }] : [],
+                        ytQueueView && ytPlaying ? [{ label: "↻ New Mix from this video", type: "yt:remix" }] : [],
                         [{ label: "My playlist (" + ytPlaylist.length + ")", type: "yt:playlist" },
                          { label: "Up next (" + ytQueue.length + (ytComing.length ? " + " + ytComing.length + " autoplay" : "") + ")", type: "yt:queue" }], ytChips);
         let lead = [];
@@ -168,6 +169,11 @@ Singleton {
         if (filters.includes("yt:playall")) {
             filters = filters.filter(f => f !== "yt:playall");
             ytPlayAll();
+            return;
+        }
+        if (filters.includes("yt:remix")) {
+            filters = filters.filter(f => f !== "yt:remix");
+            ytRemix();
             return;
         }
         // My playlist / Up next: one view at a time, the newest wins
@@ -339,6 +345,7 @@ Singleton {
                 root.candidates = d.candidates || [];
                 root.hasMore = !!d.more;
                 root.photos = d.photos || [];
+                root._ytShownKey = "";
                 root._shownList = !!d.list;
                 root.shownQuery = d.query;
                 root._shownKey = d.key;
@@ -606,6 +613,7 @@ Singleton {
     property var ytPlaylist: []         // [{id, title, channel, duration}]
     property var ytRecent: []
     property bool _shownList: false     // the grid shows a pasted playlist link
+    property string _ytShownKey: ""     // the My playlist / Up next view _ytShowList showed last
     property bool ytPlaying: false
     property bool ytLoading: false   // a video is downloading before it can play
     property string ytVideoId: ""
@@ -787,6 +795,18 @@ Singleton {
         return source === "youtube" && ytQueueView && !!bySrc[src];
     }
 
+    // ↻ New Mix: the autoplay part of Up next becomes YouTube's Mix for the video playing now (your queue stays)
+    function ytRemix() {
+        if (!ytPlaying)
+            return;
+        ytComing = [];
+        if (ytQueueView) {
+            _shownKey = "";
+            _run();
+        }
+        _ytListCommand({ remix: true });
+    }
+
     function _ytSetQueue(list) {
         ytQueue = list;
         upnextFile.setText(JSON.stringify(list));
@@ -835,6 +855,8 @@ Singleton {
         for (const p of list)
             t[p.src] = p.thumb;
         thumbs = t;
+        appending = photos.length > 0 && _shownList && _ytShownKey === _key;   // same view updated (reorder, a video ended): keep the scroll
+        _ytShownKey = _key;
         photos = list;
         _shownList = true;
         hasMore = false;

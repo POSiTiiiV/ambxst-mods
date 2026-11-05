@@ -39,7 +39,8 @@ yt-player: plays a queue as the wallpaper. YouTube refuses mpv's own stream fetc
   "topup": keep an Autoplay list going like YouTube: with fewer than 5 unplayed videos ahead, fetch the
   Mix of the video playing now and append what hasn't been in the list or played yet.
   "commands": JSON lines the shell appends to edit the list: {"move": n, "delta": ±1} swaps list entry n
-  with its neighbour in play order, {"remove": n} drops it. Applied within half a second.
+  with its neighbour in play order, {"remove": n} drops it, {"remix": true} replaces the list with a fresh
+  YouTube Mix of the video on screen (Autoplay from here on). Applied within half a second.
   SIGUSR1 = next, SIGUSR2 = previous, SIGHUP = hide (save {queue, i, from_list, item, output, seek,
   hidden} to "state", quit the player, exit). With PyGObject it is also the MPRIS player "YouTube
   wallpaper": play/pause, next, previous, seek, stop, title and thumbnail.
@@ -586,16 +587,19 @@ def yt_player(queue_file):
     import threading
     topup = bool(cfg.get("mix") or cfg.get("topup"))  # an Autoplay list: keeps growing, like YouTube
     played = set()  # video ids played this session (top-ups skip them)
-    mixing = {"busy": False, "seeds": set()}
+    mixing = {"busy": False, "seeds": set(), "gen": 0}  # gen: a remix makes older Mix fetches stale
 
     def expand_mix(mix_url):
         """Append YouTube's Mix for a video (Autoplay), in the background (~5 s): what plays meanwhile
         isn't held up, and new entries are prefetched like any list's once they're known."""
+        gen = mixing["gen"]
         try:
             out = subprocess.run(["yt-dlp", "--flat-playlist", "-J", "--playlist-end", "50", "--no-warnings", "--", mix_url],
                                  capture_output=True, text=True, timeout=90)
             known = {re.search(r"v=([\w-]{11})", q["url"]).group(1) for q in queue if re.search(r"v=([\w-]{11})", q["url"])} | played
             for e in (json.loads(out.stdout).get("entries") or []):
+                if gen != mixing["gen"]:
+                    break  # the list was remixed meanwhile
                 if e.get("id") and len(e["id"]) == 11 and e["id"] not in known:
                     known.add(e["id"])
                     queue.append({"url": f"https://www.youtube.com/watch?v={e['id']}", "title": e.get("title") or e["id"],
@@ -603,7 +607,8 @@ def yt_player(queue_file):
         except Exception:
             pass  # the list plays on (and loops) as it is
         finally:
-            mixing["busy"] = False
+            if gen == mixing["gen"]:
+                mixing["busy"] = False
 
     def start_mix(vid):
         if mixing["busy"] or not vid or vid in mixing["seeds"]:
@@ -756,7 +761,8 @@ def yt_player(queue_file):
     cmd_file = Path(cfg["commands"]) if cfg.get("commands") else None
 
     def process_commands(i):
-        """Reorder / remove list entries from the shell's Up next view; returns the adjusted index."""
+        """Reorder / remove / remix list entries from the shell's Up next view; returns the adjusted index."""
+        nonlocal topup
         if not cmd_file or not cmd_file.exists():
             return i
         work = cmd_file.with_name(cmd_file.name + ".work")
@@ -772,6 +778,19 @@ def yt_player(queue_file):
             try:
                 c = json.loads(line)
             except ValueError:
+                continue
+            if c.get("remix") and state["cur"]:
+                # the video on screen becomes the whole list, YouTube's Mix for it follows (Autoplay)
+                cur = state["cur"][0]
+                vid = key(cur).split(".")[0]
+                queue[:] = [cur]
+                i = playing = 0
+                state["cur"] = (cur, True, 0)
+                topup = True
+                mixing["gen"] += 1
+                mixing["busy"] = False
+                mixing["seeds"].discard(vid)
+                start_mix(vid)
                 continue
             n = c.get("move", c.get("remove"))
             if not isinstance(n, int) or not 0 <= n < len(queue) or n == playing:
@@ -917,6 +936,7 @@ def yt_player(queue_file):
             elif not state["skip"]:
                 time.sleep(3)  # couldn't download it (gone, region-locked, offline): move on
             # 4. what's next
+            from_list = state["cur"][1]  # a remix turns an Up next video into the list's
             jump = load(Path(cfg["jump"]), None) if cfg.get("jump") else None
             if jump is not None:  # an autoplay video picked in Up next: continue the list from it
                 Path(cfg["jump"]).unlink(missing_ok=True)

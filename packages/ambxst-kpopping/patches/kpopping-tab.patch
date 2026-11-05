@@ -60,7 +60,7 @@ index b60e100..2846625 100644
          Connections {
              target: GlobalStates.wallpaperManager
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index f914730..29bd871 100644
+index f914730..a1e3051 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -14,7 +14,7 @@ FocusScope {
@@ -813,11 +813,11 @@ index f914730..29bd871 100644
                  currentIndex: selectedIndex
  
                  // Propiedad para detectar si está en movimiento (drag o flick)
-@@ -1151,6 +1771,26 @@ FocusScope {
+@@ -1151,6 +1771,28 @@ FocusScope {
                  flickDeceleration: 5000
                  maximumFlickVelocity: 8000
  
-+                // positive.ambxst-kpopping: the next page loads near the end; a new page keeps the scroll position
++                // positive.ambxst-kpopping: the next page loads near the end; a new page (or an updated Up next) keeps the scroll position
 +                property real kpSavedY: 0
 +                onContentYChanged: {
 +                    if (!KpoppingService.appending)
@@ -831,7 +831,9 @@ index f914730..29bd871 100644
 +                        if (!KpoppingService.appending)
 +                            return;
 +                        Qt.callLater(function () {
-+                            wallpaperGrid.contentY = wallpaperGrid.kpSavedY;
++                            // clamped: a refreshed Up next can be shorter than before
++                            const maxY = Math.max(wallpaperGrid.originY, wallpaperGrid.originY + wallpaperGrid.contentHeight - wallpaperGrid.height);
++                            wallpaperGrid.contentY = Math.max(wallpaperGrid.originY, Math.min(maxY, wallpaperGrid.kpSavedY));
 +                            KpoppingService.appending = false;
 +                        });
 +                    }
@@ -840,7 +842,7 @@ index f914730..29bd871 100644
                  // Sincronizar selectedIndex cuando el GridView cambia su currentIndex
                  onCurrentIndexChanged: {
                      if (currentIndex !== selectedIndex && currentIndex >= 0) {
-@@ -1197,7 +1837,9 @@ FocusScope {
+@@ -1197,7 +1839,9 @@ FocusScope {
                          Rectangle {
                              anchors.fill: parent
                              anchors.topMargin: -20
@@ -851,7 +853,7 @@ index f914730..29bd871 100644
                              anchors.leftMargin: -20
                              anchors.rightMargin: -20
                              color: "transparent"
-@@ -1221,7 +1863,7 @@ FocusScope {
+@@ -1221,7 +1865,7 @@ FocusScope {
                                  property bool isCurrentWallpaper: (wallpaperGrid.currentIndex >= 0 && wallpaperGrid.currentIndex < filteredWallpapers.length) ? (filteredWallpapers[wallpaperGrid.currentIndex] === wallpapersTabRoot.activeWallpaperPath) : false
                                  property bool showHoveredItem: currentItem && currentItem.isHovered && !visible
  
@@ -860,7 +862,7 @@ index f914730..29bd871 100644
  
                                  Rectangle {
                                      anchors.verticalCenter: parent.verticalCenter
-@@ -1239,6 +1881,9 @@ FocusScope {
+@@ -1239,6 +1883,9 @@ FocusScope {
                                          text: {
                                              if (parent.parent.isCurrentWallpaper) {
                                                  return I18n.t("wallpapers.current");
@@ -870,7 +872,7 @@ index f914730..29bd871 100644
                                              } else if (wallpaperGrid.currentIndex >= 0 && wallpaperGrid.currentIndex < filteredWallpapers.length) {
                                                  return filteredWallpapers[wallpaperGrid.currentIndex].split('/').pop();
                                              }
-@@ -1320,6 +1965,7 @@ FocusScope {
+@@ -1320,6 +1967,7 @@ FocusScope {
                      width: wallpaperGrid.cellWidth
                      height: wallpaperGrid.cellHeight
                      color: "transparent"
@@ -878,7 +880,7 @@ index f914730..29bd871 100644
  
                      property bool isCurrentWallpaper: modelData === wallpapersTabRoot.activeWallpaperPath
  
-@@ -1342,6 +1988,9 @@ FocusScope {
+@@ -1342,6 +1990,9 @@ FocusScope {
                      Item {
                          anchors.fill: parent
                          anchors.margins: wallpapersTabRoot.wallpaperMargin
@@ -888,7 +890,7 @@ index f914730..29bd871 100644
  
                          ClippingRectangle {
                              anchors.fill: parent
-@@ -1354,14 +2003,18 @@ FocusScope {
+@@ -1354,14 +2005,18 @@ FocusScope {
                                      anchors.fill: parent
                                      sourceComponent: staticImageComponent
                                      property string sourceFile: modelData
@@ -909,7 +911,7 @@ index f914730..29bd871 100644
  
                                      Text {
                                          anchors.centerIn: parent
-@@ -1376,11 +2029,34 @@ FocusScope {
+@@ -1376,11 +2031,34 @@ FocusScope {
                                              to: 360
                                              duration: 1000
                                              loops: Animation.Infinite
@@ -945,7 +947,7 @@ index f914730..29bd871 100644
                          }
                      }
  
-@@ -1399,22 +2075,155 @@ FocusScope {
+@@ -1399,22 +2077,155 @@ FocusScope {
                          onExited: {
                              parent.isHovered = false;
                          }
@@ -1112,7 +1114,7 @@ index f914730..29bd871 100644
                          }
                      }
  
-@@ -1455,10 +2264,16 @@ FocusScope {
+@@ -1455,10 +2266,16 @@ FocusScope {
          Image {
              mipmap: true
              source: {
