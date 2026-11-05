@@ -26,20 +26,16 @@ yt: lists videos through yt-dlp (search: 30 per page; a link: every video in it)
   as search ("photos" with src = watch URL, thumb = i.ytimg.com URL), "list": true for a link.
   mpv / mpv-watch talk to the YouTube wallpaper player's IPC socket ($XDG_RUNTIME_DIR/ambxst-kpopping-mpv.sock).
 
-yt-player: YouTube refuses mpv's own stream fetches (403 since late 2026), while yt-dlp's downloader
-  works. So the player (mpvpaper, ytdl=no, loop-playlist=force) reads a named pipe, and this feeds it
-  one video at a time: yt-dlp -o - into the pipe, nothing on disk. queue.json:
-  {"fifo", "format", "queue": [{"url", "title"}], "start", "mix": bool, "options": <json with loop/shuffle>,
-   "upnext": <json list of {"url", "title"}>}. Up next (popped from its file) plays first, ahead of Loop;
-  then the list carries on. Loop/shuffle are re-read before every video. SIGUSR1 = next video,
-  SIGUSR2 = previous video. With PyGObject, it also is the MPRIS player "YouTube wallpaper"
-  (media keys, Ambxst's media widgets): play/pause, next, previous, stop, title and thumbnail.
-  yt-dlp merges through ffmpeg; YouTube resets a connection held open while the pipe is full (the
-  audio stopped mid-video), so ffmpeg is told to reconnect and resume.
-  Exits (and quits the player) when done; exits quietly when the player is gone.
-  SIGHUP = hide: writes "state" ({queue, i, from_list, item, output, seek, hidden, time}) with the position,
-  quits the player and exits. A resume passes "first_item" / "from_list" / "seek" back in; the
-  first video then starts there (yt-dlp --download-sections, from the next keyframe).
+yt-player: plays a queue as the wallpaper. YouTube refuses mpv's own stream fetches (403 since late
+  2026), so yt-dlp downloads each video into ~/.cache/ambxst/kpopping/yt/<id>.<format key>.mkv (an LRU
+  cache, "cache_gb"), and the feeder starts mpvpaper on the first one, then loadfile's the next. While a
+  video plays, the next ones (Up next, then the list) download ahead. Cached videos start instantly and
+  seek exactly. queue.json: {"format", "queue": [{"url", "title", "channel"}], "start", "mix": bool,
+  "options": <json with loop/shuffle>, "upnext": <json list>, "state": <file>, "mpv_opts", "output",
+  "cache_gb", "first_item", "from_list", "seek"}. Up next plays first, ahead of Loop; then the list.
+  SIGUSR1 = next, SIGUSR2 = previous, SIGHUP = hide (save {queue, i, from_list, item, output, seek,
+  hidden} to "state", quit the player, exit). With PyGObject it is also the MPRIS player "YouTube
+  wallpaper": play/pause, next, previous, seek, stop, title and thumbnail.
 
 fit: writes skwd-wall's display.fillMode / display.backgroundMode before an apply.
   auto = landscape images fill the screen, portrait and square ones are shown whole.
@@ -410,7 +406,7 @@ def mpv(command):
 
 def mpv_watch():
     """Follows the player until it quits: one JSON line per change of the watched properties."""
-    for _ in range(60):  # the player opens its socket a moment after it starts
+    for _ in range(720):  # the player starts once its first video is downloaded: wait up to 3 min
         try:
             s = socket.socket(socket.AF_UNIX)
             s.connect(str(MPV_SOCKET))
@@ -421,7 +417,8 @@ def mpv_watch():
     else:
         return 1
     with s:
-        for i, prop in enumerate(("media-title", "mute", "pause", "user-data/kpopping/count"), 1):
+        for i, prop in enumerate(("media-title", "mute", "pause", "user-data/kpopping/count", "user-data/kpopping/loading",
+                                  "user-data/kpopping/id"), 1):
             s.sendall(json.dumps({"command": ["observe_property", i, prop]}).encode() + b"\n")
         for line in s.makefile():
             try:
@@ -461,6 +458,7 @@ MPRIS_XML = """<node>
   <property name="CanGoNext" type="b" access="read"/><property name="CanGoPrevious" type="b" access="read"/>
   <property name="CanPlay" type="b" access="read"/><property name="CanPause" type="b" access="read"/>
   <property name="CanSeek" type="b" access="read"/><property name="CanControl" type="b" access="read"/>
+  <signal name="Seeked"><arg name="Position" type="x"/></signal>
  </interface>
 </node>"""
 
@@ -478,10 +476,12 @@ def _mpris(state):
     shown = {"status": None, "meta": None}
 
     def prop(name):
-        status = "Playing"
+        status, position, length = "Playing", 0, 0
         try:
             status = "Paused" if json.loads(mpv(["get_property", "pause"])).get("data") else "Playing"
-        except (OSError, ValueError):
+            position = int((json.loads(mpv(["get_property", "time-pos"])).get("data") or 0) * 1e6)
+            length = int((json.loads(mpv(["get_property", "duration"])).get("data") or 0) * 1e6)
+        except (OSError, ValueError, TypeError):
             pass
         item = state.get("item") or {}
         vid = item.get("url", "").rsplit("v=", 1)[-1][:11]
@@ -490,15 +490,17 @@ def _mpris(state):
                 "xesam:artist": GLib.Variant("as", [item.get("channel") or "YouTube"])}
         if vid:
             meta["mpris:artUrl"] = GLib.Variant("s", f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg")
+        if length:
+            meta["mpris:length"] = GLib.Variant("x", length)
         values = {"CanQuit": GLib.Variant("b", False), "CanRaise": GLib.Variant("b", False),
                   "HasTrackList": GLib.Variant("b", False), "Identity": GLib.Variant("s", "YouTube wallpaper"),
                   "SupportedUriSchemes": GLib.Variant("as", []), "SupportedMimeTypes": GLib.Variant("as", []),
                   "PlaybackStatus": GLib.Variant("s", status), "Metadata": GLib.Variant("a{sv}", meta),
-                  "Position": GLib.Variant("x", 0), "Rate": GLib.Variant("d", 1.0), "MinimumRate": GLib.Variant("d", 1.0),
+                  "Position": GLib.Variant("x", position), "Rate": GLib.Variant("d", 1.0), "MinimumRate": GLib.Variant("d", 1.0),
                   "MaximumRate": GLib.Variant("d", 1.0), "Volume": GLib.Variant("d", 1.0),
                   "CanGoNext": GLib.Variant("b", True), "CanGoPrevious": GLib.Variant("b", True),
                   "CanPlay": GLib.Variant("b", True), "CanPause": GLib.Variant("b", True),
-                  "CanSeek": GLib.Variant("b", False), "CanControl": GLib.Variant("b", True)}
+                  "CanSeek": GLib.Variant("b", True), "CanControl": GLib.Variant("b", True)}
         return values.get(name) if name else values
 
     def call(conn, sender, path, iface, method, params, invocation):
@@ -513,6 +515,10 @@ def _mpris(state):
                 os.kill(os.getpid(), signal.SIGUSR1)
             elif method == "Previous":
                 os.kill(os.getpid(), signal.SIGUSR2)
+            elif method == "Seek":
+                mpv(["seek", params.unpack()[0] / 1e6, "relative+exact"])
+            elif method == "SetPosition":
+                mpv(["seek", params.unpack()[1] / 1e6, "absolute+exact"])
             elif method in ("Stop", "Quit"):
                 os.kill(os.getpid(), signal.SIGHUP)  # hide, remembering where it was
         except OSError:
@@ -553,18 +559,19 @@ def _pop_upnext(path):
     return items[0]
 
 
+YT_CACHE = CACHE / "yt"
+
+
 def yt_player(queue_file):
     cfg = json.loads(Path(queue_file).read_text())
-    fifo, fmt, queue, upnext = cfg["fifo"], cfg["format"], cfg["queue"], cfg.get("upnext")
-    # the player is started at the same moment: wait for its socket (losing this race used to end
-    # the feeder at once, leaving an idle player the notch showed as playing)
-    for _ in range(60):
-        if _mpv_alive():
-            break
-        time.sleep(0.25)
-    else:
-        return 0
-    if cfg.get("mix") and queue:  # YouTube's Mix after the clicked video, like YouTube's autoplay
+    fmt, queue, upnext = cfg["format"], cfg["queue"], cfg.get("upnext")
+    fkey = hashlib.sha1(fmt.encode()).hexdigest()[:8]
+    cap = int(float(cfg.get("cache_gb") or 2) * 1024 ** 3)
+    YT_CACHE.mkdir(parents=True, exist_ok=True)
+
+    def expand_mix():
+        """YouTube's Mix after the clicked video (Autoplay). In the background (~5 s): the first video
+        downloads meanwhile, and the Mix's videos are prefetched like any list's once they're known."""
         try:
             out = subprocess.run(["yt-dlp", "--flat-playlist", "-J", "--playlist-end", "50", "--no-warnings", "--", queue[0]["mix"]],
                                  capture_output=True, text=True, timeout=90)
@@ -574,19 +581,61 @@ def yt_player(queue_file):
                                   "channel": e.get("channel") or e.get("uploader") or ""})
         except Exception:
             pass  # the clicked video still plays (and loops)
-    state = {"skip": False, "back": False, "child": None, "item": None}
+    if cfg.get("mix") and queue:
+        import threading
+        threading.Thread(target=expand_mix, daemon=True).start()
 
-    def next_video(*_):
-        state["skip"] = True
-        if state["child"]:
+    def key(it):
+        m = re.search(r"v=([\w-]{11})", it.get("url", ""))
+        return (m.group(1) if m else hashlib.sha1(it["url"].encode()).hexdigest()[:11]) + "." + fkey
+
+    def cached(it):
+        """The finished file (<id>.<fkey>.<ext>; partial ones have more dots or .part)."""
+        for f in YT_CACHE.glob(key(it) + ".*"):
+            if f.name.count(".") == 2 and not f.name.endswith((".part", ".ytdl")):
+                return f
+        return None
+
+    downloads, failed = {}, {}  # key -> Popen; key -> time it failed
+
+    def download(it):
+        k = key(it)
+        if k in downloads or cached(it) or time.time() - failed.get(k, 0) < 60:
+            return
+        downloads[k] = subprocess.Popen(["yt-dlp", "-q", "--no-warnings", "--no-playlist", "-f", fmt, "--merge-output-format", "mkv",
+                                         "--no-mtime", "-o", str(YT_CACHE / (k + ".%(ext)s")), "--", it["url"]],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+    def reap():
+        for k, proc in list(downloads.items()):
+            if proc.poll() is not None:
+                del downloads[k]
+                if proc.returncode != 0:
+                    failed[k] = time.time()
+
+    def stop_download(it):
+        proc = downloads.pop(key(it), None)
+        if proc:
             try:
-                os.killpg(state["child"].pid, signal.SIGKILL)
+                os.killpg(proc.pid, signal.SIGKILL)
             except OSError:
                 pass
 
-    def previous_video(*_):
-        state["back"] = True
-        next_video()
+    def prune(keep):
+        """Keep the cache under the cap: oldest-used first, never what's playing or coming up."""
+        files = [f for f in YT_CACHE.iterdir() if f.is_file()]
+        total = sum(f.stat().st_size for f in files)
+        for f in sorted(files, key=lambda f: f.stat().st_mtime):
+            if total <= cap:
+                break
+            if f.name.split(".")[0] in keep or any(f.name.startswith(k) for k in downloads):
+                continue
+            total -= f.stat().st_size
+            f.unlink(missing_ok=True)
+
+    state = {"skip": False, "back": False, "item": None, "cur": None, "next_i": None, "qlen": len(queue)}
+    signal.signal(signal.SIGUSR1, lambda *_: state.update(skip=True))
+    signal.signal(signal.SIGUSR2, lambda *_: state.update(back=True, skip=True))
     state_file = Path(cfg["state"]) if cfg.get("state") else None
 
     def save_state(seek=0.0, hidden=False):
@@ -602,25 +651,21 @@ def yt_player(queue_file):
             pos = json.loads(mpv(["get_property", "time-pos"])).get("data") or 0.0
         except (OSError, ValueError):
             pass
-        save_state(state.get("offset", 0) + pos - 2, hidden=True)  # a little before, for context
+        save_state(pos - 2, hidden=True)  # a little before, for context
         try:
             mpv(["quit"])
         except OSError:
             pass
-        if state["child"]:
+        for k in list(downloads):
             try:
-                os.killpg(state["child"].pid, signal.SIGKILL)
+                os.killpg(downloads[k].pid, signal.SIGKILL)
             except OSError:
                 pass
         os._exit(0)
-    signal.signal(signal.SIGUSR1, next_video)
-    signal.signal(signal.SIGUSR2, previous_video)
     signal.signal(signal.SIGHUP, hide)
     _mpris(state)
-    signal.signal(signal.SIGTERM, lambda *_: (next_video(), sys.exit(0)))
 
     def call(command, tries=8):
-        """mpv IPC that rides out a brief hiccup; OSError only when the player is really gone."""
         for n in range(tries):
             try:
                 return mpv(command)
@@ -629,81 +674,133 @@ def yt_player(queue_file):
                     raise
                 time.sleep(0.25)
 
-    def finish(skipped):
-        """Wait until the player is done with the current video (drop it on Next); None if it's gone."""
-        if skipped:
-            call(["loadfile", fifo, "replace"])
-        while True:
-            if state["skip"]:  # Next while the player still plays what it buffered
-                state["skip"], skipped = False, True
-                call(["loadfile", fifo, "replace"])
-            try:
-                reply = json.loads(call(["get_property", "time-pos"]))
-            except (OSError, ValueError):
-                return None
-            if reply.get("error") != "success":  # reopening the pipe: ready for the next video
-                return skipped
-            time.sleep(0.3)
+    def options():
+        return load(Path(cfg["options"]), {})
 
+    def plan_next(i):
+        """Index the list continues with (shuffle decides now, so it can be prefetched)."""
+        if not queue:
+            return None
+        if options().get("shuffle") and len(queue) > 1:
+            return random.choice([n for n in range(len(queue)) if n != i])
+        return (i + 1) % len(queue)
+
+    def upcoming(i, item):
+        out = (load(Path(upnext), []) if upnext else [])[:2]
+        if options().get("loop"):
+            out.append(item)
+        if state["next_i"] is not None:
+            out.append(queue[state["next_i"]])
+            if len(queue) > 2 and not options().get("shuffle"):
+                out.append(queue[(state["next_i"] + 1) % len(queue)])
+        return out
+
+    def prefetch(i, item):
+        reap()
+        if len(queue) != state["qlen"]:  # the Mix arrived: plan the list's next video again
+            state["qlen"] = len(queue)
+            if state["cur"] and state["cur"][1]:
+                state["next_i"] = plan_next(i)
+            try:
+                mpv(["set_property", "user-data/kpopping/count", len(queue) + len(load(Path(upnext), []) if upnext else [])])
+            except OSError:
+                pass
+        if not downloads:  # one at a time, so the current video never competes for long
+            for it in upcoming(i, item):
+                if not cached(it) and time.time() - failed.get(key(it), 0) >= 60:
+                    download(it)
+                    break
+
+    player_started = False
+    seek = float(cfg.get("seek") or 0)  # resuming: the first video starts here
     i = max(0, min(cfg.get("start", 0), len(queue) - 1))
-    item, from_list, gone = (queue[i] if queue else _pop_upnext(upnext)), True, False
+    item, from_list = (queue[i] if queue else _pop_upnext(upnext)), True
     if cfg.get("first_item"):  # resuming an Up next video that isn't in the list
         item, from_list = cfg["first_item"], bool(cfg.get("from_list"))
-    seek = float(cfg.get("seek") or 0)  # resuming: the first video starts here
     history = []  # (item, from_list, i) played before the current one, for Previous
     try:
         while item:
-            try:
-                call(["set_property", "force-media-title", item["title"]])
-                call(["set_property", "user-data/kpopping/count", len(queue) + len(load(Path(upnext), [])) if upnext else len(queue)])
-            except OSError:
-                gone = True
-                return 0
             state["skip"], state["back"], state["item"] = False, False, item
-            state["cur"], state["offset"] = (item, from_list, i), seek
+            state["cur"] = (item, from_list, i)
+            # the list continues after a list video; after an Up next video it resumes at i itself
+            state["next_i"] = (plan_next(i) if from_list else i) if queue else None
             save_state(seek)
-            fd = None
-            while fd is None and not state["skip"]:  # the player opens the pipe when it's ready to read
-                try:
-                    fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
-                except OSError as e:
-                    if e.errno != errno.ENXIO:
-                        raise
-                    if not _mpv_alive():
-                        gone = True
+            # 1. the file (cached: instant; otherwise download it, the player shows "Loading")
+            path = cached(item)
+            if not path:
+                if player_started:
+                    call(["set_property", "user-data/kpopping/loading", True])
+                download(item)
+                while not path and not state["skip"]:
+                    reap()
+                    path = cached(item)
+                    if not path and key(item) not in downloads:
+                        break  # the download failed
+                    time.sleep(0.3)
+                if state["skip"] and not path:
+                    stop_download(item)
+            if path:
+                os.utime(path)  # most recently used: last to be pruned
+                # 2. play it
+                if not player_started:
+                    subprocess.Popen(["mpvpaper", "-l", "bottom", "-o", cfg["mpv_opts"] + (f" start={int(seek)}" if seek else ""),
+                                      cfg.get("output") or "ALL", str(path)],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                    for _ in range(60):
+                        if _mpv_alive():
+                            break
+                        time.sleep(0.25)
+                    else:
                         return 0
-                    time.sleep(0.2)
-            started, code = time.time(), 0
-            if fd is not None:
-                fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) & ~os.O_NONBLOCK)
-                section = ["--download-sections", f"*{int(seek)}-inf"] if seek > 0 else []
-                seek = 0  # only the first video resumes mid-way
-                state["child"] = subprocess.Popen(["yt-dlp", "-q", "--no-warnings", "-f", fmt, *section,
-                                                   "--downloader-args", "ffmpeg_i:-reconnect 1 -reconnect_on_network_error 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-                                                   "-o", "-", "--", item["url"]],
-                                                  stdout=fd, stderr=subprocess.DEVNULL, start_new_session=True)
-                os.close(fd)
-                code = state["child"].wait()
-                state["child"] = None
-            skipped = finish(state["skip"])
-            if skipped is None:
-                gone = True
-                return 0
-            if code != 0 and not skipped and time.time() - started < 5:
-                time.sleep(5)  # failing fast (network down, video gone): don't spin
+                    player_started = True
+                    if seek:
+                        # resume: "start" must stay set until the file has actually opened (clearing it
+                        # straight away raced the load and the video began at 0), then confirm the position
+                        for _ in range(40):
+                            try:
+                                pos = json.loads(mpv(["get_property", "time-pos"]))
+                                if pos.get("error") == "success":
+                                    break
+                            except (OSError, ValueError):
+                                pass
+                            time.sleep(0.25)
+                        call(["set_property", "start", "none"])  # only this first file starts mid-way
+                        try:
+                            if (json.loads(mpv(["get_property", "time-pos"])).get("data") or 0) < seek - 3:
+                                call(["seek", int(seek), "absolute+exact"])
+                        except (OSError, ValueError):
+                            pass
+                else:
+                    call(["loadfile", str(path), "replace", -1, f"start={int(seek)}" if seek else "start=none"])
+                seek = 0
+                call(["set_property", "force-media-title", item["title"]])
+                call(["set_property", "user-data/kpopping/id", key(item).split(".")[0]])  # the notch's thumbnail
+                call(["set_property", "user-data/kpopping/count", len(queue) + len(load(Path(upnext), []) if upnext else [])])
+                call(["set_property", "user-data/kpopping/loading", False])
+                prune({key(it).split(".")[0] for it in [item] + upcoming(i, item)})
+                # 3. wait for the end (or Next / Previous), downloading what comes next meanwhile
+                time.sleep(0.5)
+                while not state["skip"]:
+                    try:
+                        if json.loads(mpv(["get_property", "eof-reached"])).get("data"):
+                            break
+                    except (OSError, ValueError):
+                        if not _mpv_alive():
+                            return 0
+                    prefetch(i, item)
+                    time.sleep(0.4)
+            elif not state["skip"]:
+                time.sleep(3)  # couldn't download it (gone, region-locked, offline): move on
+            # 4. what's next
             if state["back"]:  # Previous: the video before this one (or this one again from the start)
                 if history:
                     item, from_list, i = history.pop()
                 continue
             history = (history + [(item, from_list, i)])[-50:]
-            opts = load(Path(cfg["options"]), {})
-            repeat = opts.get("loop") and not skipped
-            if from_list and not repeat and queue:  # leaving a list video: move on in the list
-                if opts.get("shuffle") and len(queue) > 1:
-                    i = random.choice([n for n in range(len(queue)) if n != i])
-                else:
-                    i = (i + 1) % len(queue)
+            repeat = options().get("loop") and not state["skip"] and path
             queued = _pop_upnext(upnext)  # Up next comes first, ahead of Loop
+            if from_list and not repeat and state["next_i"] is not None:
+                i = state["next_i"]  # leaving a list video: move on in the list
             if queued:
                 item, from_list = queued, False
             elif repeat:
@@ -712,7 +809,12 @@ def yt_player(queue_file):
                 item, from_list = (queue[i] if queue else None), True
         return 0
     finally:
-        if not gone:  # stopping for any other reason: don't leave an idle player behind
+        for proc in downloads.values():
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+        if player_started:
             try:
                 mpv(["quit"])
             except OSError:

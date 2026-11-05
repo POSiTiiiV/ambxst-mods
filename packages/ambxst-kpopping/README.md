@@ -47,11 +47,20 @@ Press **▶** at the end of the top row, then search, or paste a YouTube video o
 | **Loop video** | Repeats the current video instead of moving on. Also applies to the video that's playing. |
 | **Shuffle** | Shuffles the playlist. Also applies to the one that's playing. |
 | **Autoplay** (on by default) | After a search result, keeps going with YouTube's Mix of related videos, like YouTube's own autoplay. Off: that one video loops. |
-| **Notch** | While a video plays: its title (scrolling when it's long). **Hover** the notch for **⏮ previous**, **⏯ pause/play**, **mute/unmute**, **⏭ next** and **stop**: they take the title's place, or sit beside it, with the notch sized to fit, when *expand notch on hover* is on. Mute and volume are the same setting as skwd-wall's video wallpapers (Wallpaper settings), both ways. |
-| **Media keys / media widgets** | The wallpaper is an MPRIS player called *YouTube wallpaper* (needs PyGObject): play/pause, next, previous and stop work from your keyboard's media keys, `playerctl`, and Ambxst's media controls, with title, channel and thumbnail. |
+| **Notch** | While a video plays: its title (scrolling when it's long), over the video's thumbnail, blurred, the same backdrop Ambxst's media player uses for album art. **Hover** the notch for **⏮ previous**, **⏪ −5 s**, **⏯ pause/play**, **⏩ +5 s**, **⏭ next**, **mute/unmute** and **stop**: they take the title's place, or sit beside it, with the notch sized to fit, when *expand notch on hover* is on. Mute and volume are the same setting as skwd-wall's video wallpapers (Wallpaper settings), both ways. |
+| **Media keys / media widgets** | The wallpaper is an MPRIS player called *YouTube wallpaper* (needs PyGObject): play/pause, next, previous, seek and stop work from your keyboard's media keys, `playerctl`, and Ambxst's media controls, with title, channel and thumbnail. |
 
 - **Quality** (Settings → Mods → Kpopping): *Auto* (default) fetches at most your screen's resolution. *Best available*, or a cap at 2160p / 1440p / 1080p / 720p. At that size VP9, then H.264, are preferred over AV1, because most GPUs decode them in hardware. Motion is smoothed for 60 fps video on high-refresh screens.
 - **Pause YouTube wallpaper when covered** (off by default): pause while a fullscreen window covers the screen, and in game mode. This is the same rule skwd-wall uses for video wallpapers.
+**Seek keys:** mods can't add Hyprland keybinds, so bind these yourself (in Lua config, e.g. `custom_binds.lua`):
+
+```lua
+hl.bind("SUPER + CTRL + Left",  hl.dsp.exec_cmd("playerctl -p ambxst_kpopping position 5-"), { repeating = true })
+hl.bind("SUPER + CTRL + Right", hl.dsp.exec_cmd("playerctl -p ambxst_kpopping position 5+"), { repeating = true })
+```
+
+`-p ambxst_kpopping` targets the wallpaper, even while Spotify or a browser is the "active" player.
+
 **What plays after the current video (and on next ⏭):**
 
 1. **Up next** comes first.
@@ -62,11 +71,10 @@ Press **▶** at the end of the top row, then search, or paste a YouTube video o
    - **A search result:** with **Autoplay** on, YouTube's Mix of related videos (like YouTube's own autoplay); off, it repeats.
 
 Lists loop when they reach the end.
-- Nothing is saved: the pipe is a ~64 KB kernel buffer, and mpv buffers a little ahead in RAM.
-- The video streams through mpvpaper on the layer just above skwd-wall. YouTube refuses mpv's own stream fetches (HTTP 403), so yt-dlp downloads each video straight into a pipe the player reads. Nothing is saved to disk. A video starts after ~5–10 s.
+- Videos are downloaded with yt-dlp into **`~/.cache/ambxst/kpopping/yt/`** and played from there by mpvpaper, on the layer just above skwd-wall. YouTube refuses mpv's own stream fetches (HTTP 403). A new video takes ~5–15 s to start (the notch says *Loading…*). While one plays, the next ones (Up next, then the list, including Autoplay's Mix) download ahead, and recently played ones stay cached, so skipping, going back, resuming and seeking are instant and exact.
+- **YouTube cache size** (Settings → Mods → Kpopping): 2 GB by default (1 / 5 / 10 GB). The least recently played videos are deleted first; the playing and upcoming ones never are.
 - The player runs on its own, so `ambxst reload` doesn't stop it.
 - **Stop** in the notch (or a media-key stop, or choosing any other wallpaper) *hides* the video and remembers where it was. Use **⏵ Resume** to pick it back up. That and Up next live in `$XDG_RUNTIME_DIR`, so they survive `ambxst reload` and a new session starts fresh.
-- A resume starts at the next keyframe, so the picture can lag the sound by a few seconds.
 - In per-screen mode it plays on that screen, otherwise on all of them.
 - With Ambxst's desktop icons on, the video covers them (they share its layer).
 - Colours stay those of your wallpaper underneath.

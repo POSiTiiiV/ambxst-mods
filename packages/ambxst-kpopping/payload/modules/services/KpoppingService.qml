@@ -14,8 +14,9 @@ import qs.modules.services
 //   <wallpaperDir>/kpopping/<Group>/<Idol>/ and sets it through the stock setWallpaper.
 // - fit: before every skwd-wall apply, picks skwd's fill mode (auto = portrait shown whole).
 // - YouTube (source "youtube"): search / paste a link, click plays the video as the wallpaper
-//   (mpvpaper on the layer above skwd-wall reads a named pipe that `bridge yt-player` feeds with
-//   yt-dlp, since YouTube refuses mpv's own stream fetches; controls in the notch), Shift+click adds it
+//   (`bridge yt-player` downloads videos into an LRU cache with yt-dlp, since YouTube refuses mpv's own
+//   stream fetches, prefetches the next ones, and plays them with mpvpaper on the layer above skwd-wall;
+//   controls in the notch), Shift+click adds it
 //   to "My playlist" (~/.config/ambxst/kpopping-youtube.json). The player is detached, so it
 //   keeps playing across shell reloads; any other wallpaper change stops it.
 // Lives as long as the shell, so mode, query, results and filters survive the
@@ -591,11 +592,16 @@ Singleton {
 
     // ── YouTube wallpaper ──────────────────────────────────────────────
     property string ytQuality: "auto"   // setting: auto (screen height) | best | 2160 | 1440 | 1080 | 720
+    property string ytCache: "2"        // setting: YouTube cache size in GB
     property bool ytPause: false        // setting: pause while a window covers the screen
     property var ytPlaylist: []         // [{id, title, channel, duration}]
     property var ytRecent: []
     property bool _shownList: false     // the grid shows a pasted playlist link
     property bool ytPlaying: false
+    property bool ytLoading: false   // a video is downloading before it can play
+    property string ytVideoId: ""
+    // the notch paints this behind its strip, blurred, like Ambxst's media player does with album art
+    readonly property string ytThumb: ytVideoId ? "https://i.ytimg.com/vi/" + ytVideoId + "/hqdefault.jpg" : ""
     property string ytTitle: ""
     // the same mute / volume as skwd-wall's video wallpapers (Wallpaper settings)
     readonly property bool ytMuted: GlobalStates.videoWallpaperMuted
@@ -729,25 +735,27 @@ Singleton {
         const fmt = _ytFormat(screenName);
         // auto-safe: decoders that can draw directly (no copying frames between GPUs);
         // display-resample + interpolation: even motion for 60 fps video on a 144 Hz screen
-        // cache: read the stream ahead into RAM so yt-dlp isn't held back for minutes (YouTube resets
-        // connections left waiting); load-scripts=no: no second MPRIS player from an mpv plugin (the feeder is one)
+        // keep-open (no pause): the last frame stays up while the feeder loads the next file;
+        // load-scripts=no: no second MPRIS player from an mpv plugin (the feeder is one)
         const opts = ["hwdec=auto-safe", "video-sync=display-resample", "interpolation", "tscale=oversample", "no-osc", "panscan=1.0",
-                      "cache=yes", "demuxer-max-bytes=256MiB", "demuxer-max-back-bytes=32MiB", "load-scripts=no",
-                      "input-ipc-server=" + _ytSocket, "ytdl=no", "idle=yes", "loop-playlist=force",
+                      "keep-open=yes", "keep-open-pause=no", "load-scripts=no",
+                      "input-ipc-server=" + _ytSocket, "ytdl=no", "idle=yes",
                       "mute=" + (ytMuted ? "yes" : "no"), "volume=" + Math.round(Math.max(0, Math.min(1, ytVolume)) * 100)].join(" ");
         const job = JSON.stringify(Object.assign({ fifo: _ytFifo, format: fmt, options: _ytOptionsFile, upnext: _ytUpnextFile,
-                                                   state: _ytStateFile, output: screenName || "", start: start, mix: mix, queue: queue }, extra || {}));
+                                                   state: _ytStateFile, output: screenName || "", start: start, mix: mix, queue: queue,
+                                                   mpv_opts: opts, cache_gb: parseFloat(ytCache) || 2 }, extra || {}));
         _ytOutput = screenName || "ALL";
         _ytStopping = false;
         _ytStarting = true;   // the wallpaper-change watcher below must not stop the new video
         _ytBase = "";
         ytTitle = title;
-        // replace a running player; setsid: both keep running across shell reloads
+        ytLoading = true;
+        // replace a running player; the feeder starts mpvpaper once the first video is ready.
+        // setsid: both keep running across shell reloads
         ytLauncher.command = ["sh", "-c", _ytKill
-            + 'mkdir -p "$(dirname "$4")"; printf "%s" "$5" > "$4"; rm -f "$3"; mkfifo "$3"; '
-            + 'setsid -f mpvpaper -l bottom -o "$1" "$2" "$3" >/dev/null 2>&1; '
-            + 'setsid -f python3 "$6" yt-player "$4" >/dev/null 2>&1',
-            "sh", opts, _ytOutput, _ytFifo, cacheDir + "yt-queue.json", job, bridge];
+            + 'mkdir -p "$(dirname "$1")"; printf "%s" "$2" > "$1"; '
+            + 'setsid -f python3 "$3" yt-player "$1" >/dev/null 2>&1',
+            "sh", cacheDir + "yt-queue.json", job, bridge];
         ytLauncher.running = true;
         Visibilities.setActiveModule("");
     }
@@ -773,6 +781,7 @@ Singleton {
     // closes; ⏵ Resume continues there. Kept in $XDG_RUNTIME_DIR: survives `ambxst reload`, a new session forgets it.
     function ytStop() {
         _ytStopping = true;
+        ytLoading = false;
         Quickshell.execDetached(["pkill", "-HUP", "-f", "^python3 .*kpopping_bridge.py yt-player"]);
         ytStopCleanup.restart();
     }
@@ -813,6 +822,9 @@ Singleton {
     }
     function ytPrevious() {
         Quickshell.execDetached(["pkill", "-USR2", "-f", "^python3 .*kpopping_bridge.py yt-player"]);
+    }
+    function ytSeek(seconds) {
+        _ytCommand(["seek", seconds, "relative+exact"]);
     }
     function ytTogglePause() {
         _ytAutoPaused = false;   // your choice now; the covered-screen rule won't undo it
@@ -863,16 +875,23 @@ Singleton {
                     root._ytBase = root._current(root._ytOutput === "ALL" ? "" : root._ytOutput);
                 root.ytPlaying = true;
                 root._ytStarting = false;
+                if (d.prop !== "user-data/kpopping/loading")
+                    root.ytLoading = false;
                 if (d.prop === "media-title" && d.value)
                     root.ytTitle = d.value;
                 else if (d.prop === "pause")
                     root.ytPaused = !!d.value;
                 else if (d.prop === "user-data/kpopping/count")
                     root.ytCount = d.value || 0;
+                else if (d.prop === "user-data/kpopping/loading")
+                    root.ytLoading = !!d.value;
+                else if (d.prop === "user-data/kpopping/id")
+                    root.ytVideoId = d.value || "";
             }
         }
         onExited: {
             root.ytPlaying = false;
+            root.ytLoading = false;
             root.ytPaused = false;
             ytStateFile.reload();
         }
@@ -958,7 +977,7 @@ Singleton {
     }
 
     function _setting(key, value) {
-        if (key === "fitMode" || key === "fitBackground" || key === "ytQuality")
+        if (key === "fitMode" || key === "fitBackground" || key === "ytQuality" || key === "ytCache")
             root[key] = String(value);
         else if (key === "ytPause")
             root.ytPause = value === true || value === "true";

@@ -95,6 +95,31 @@
       "description": "Pause the video while a fullscreen window (or, with skwd-wall's 'maximized' pause mode, a maximized one) covers its screen, and in game mode. Off: it keeps playing.",
       "type": "boolean",
       "default": false
+    },
+    {
+      "key": "ytCache",
+      "label": "YouTube cache size",
+      "description": "Videos are downloaded into ~/.cache/ambxst/kpopping/yt so they start, seek and switch instantly, and the next ones download ahead. The oldest are deleted first when the cache is full; the playing and upcoming videos never are.",
+      "type": "enum",
+      "default": "2",
+      "options": [
+        {
+          "label": "1 GB",
+          "value": "1"
+        },
+        {
+          "label": "2 GB",
+          "value": "2"
+        },
+        {
+          "label": "5 GB",
+          "value": "5"
+        },
+        {
+          "label": "10 GB",
+          "value": "10"
+        }
+      ]
     }
   ]
 }
