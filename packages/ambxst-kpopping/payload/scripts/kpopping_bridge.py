@@ -8,7 +8,8 @@ usage:
   kpopping_bridge.py yt <search words | youtube video/playlist link> [--pages N]
   kpopping_bridge.py mpv <json command array>        e.g. mpv '["cycle","mute"]'
   kpopping_bridge.py mpv-watch                       stream the player's title/mute/pause as JSON lines
-  kpopping_bridge.py yt-player <queue.json>          feed the queue into the player's pipe, one video at a time
+  kpopping_bridge.py yt-player <queue.json>          play a YouTube queue as the wallpaper (see below)
+  kpopping_bridge.py local-thumbs <paths.txt>        shape-keeping thumbnails + sizes for local wallpapers
 
 search: --orient / --res chips are OR'd within a group, the groups AND'd; empty = any.
   Resolution buckets go by the longer edge: hd >= 1280, fhd >= 1920, 2k >= 2560, 4k >= 3840, 8k >= 7680.
@@ -33,9 +34,22 @@ yt-player: plays a queue as the wallpaper. YouTube refuses mpv's own stream fetc
   seek exactly. queue.json: {"format", "queue": [{"url", "title", "channel"}], "start", "mix": bool,
   "options": <json with loop/shuffle>, "upnext": <json list>, "state": <file>, "mpv_opts", "output",
   "cache_gb", "first_item", "from_list", "seek"}. Up next plays first, ahead of Loop; then the list.
+  "coming": the feeder keeps this file listing what the list plays next (Autoplay's Mix / playlist),
+  for the shell's Up next view. "jump": {"i": n} there + SIGUSR1 = continue the list at index n.
+  "topup": keep an Autoplay list going like YouTube: with fewer than 5 unplayed videos ahead, fetch the
+  Mix of the video playing now and append what hasn't been in the list or played yet.
+  "commands": JSON lines the shell appends to edit the list: {"move": n, "delta": ±1} swaps list entry n
+  with its neighbour in play order, {"remove": n} drops it. Applied within half a second.
   SIGUSR1 = next, SIGUSR2 = previous, SIGHUP = hide (save {queue, i, from_list, item, output, seek,
   hidden} to "state", quit the player, exit). With PyGObject it is also the MPRIS player "YouTube
   wallpaper": play/pause, next, previous, seek, stop, title and thumbnail.
+
+local-thumbs: for each path (one per line), a 480 px (long edge) JPEG that keeps the image's shape, in
+  ~/.cache/ambxst/kpopping/local-thumbs/ (Ambxst's own are 140 px squares: too small for big cards and
+  useless for a collage), made once with Pillow if installed (else ffmpeg; videos: ffmpeg, a frame at
+  1 s), up to 8 at a time. Prints
+  {"path", "w", "h", "thumb"} per file (cached ones first, at once) and {"progress": n, "total": t}.
+  Thumbnails of files that are gone are pruned.
 
 fit: writes skwd-wall's display.fillMode / display.backgroundMode before an apply.
   auto = landscape images fill the screen, portrait and square ones are shown whole.
@@ -569,21 +583,38 @@ def yt_player(queue_file):
     cap = int(float(cfg.get("cache_gb") or 2) * 1024 ** 3)
     YT_CACHE.mkdir(parents=True, exist_ok=True)
 
-    def expand_mix():
-        """YouTube's Mix after the clicked video (Autoplay). In the background (~5 s): the first video
-        downloads meanwhile, and the Mix's videos are prefetched like any list's once they're known."""
+    import threading
+    topup = bool(cfg.get("mix") or cfg.get("topup"))  # an Autoplay list: keeps growing, like YouTube
+    played = set()  # video ids played this session (top-ups skip them)
+    mixing = {"busy": False, "seeds": set()}
+
+    def expand_mix(mix_url):
+        """Append YouTube's Mix for a video (Autoplay), in the background (~5 s): what plays meanwhile
+        isn't held up, and new entries are prefetched like any list's once they're known."""
         try:
-            out = subprocess.run(["yt-dlp", "--flat-playlist", "-J", "--playlist-end", "50", "--no-warnings", "--", queue[0]["mix"]],
+            out = subprocess.run(["yt-dlp", "--flat-playlist", "-J", "--playlist-end", "50", "--no-warnings", "--", mix_url],
                                  capture_output=True, text=True, timeout=90)
-            for e in (json.loads(out.stdout).get("entries") or [])[1:]:
-                if e.get("id") and len(e["id"]) == 11:
+            known = {re.search(r"v=([\w-]{11})", q["url"]).group(1) for q in queue if re.search(r"v=([\w-]{11})", q["url"])} | played
+            for e in (json.loads(out.stdout).get("entries") or []):
+                if e.get("id") and len(e["id"]) == 11 and e["id"] not in known:
+                    known.add(e["id"])
                     queue.append({"url": f"https://www.youtube.com/watch?v={e['id']}", "title": e.get("title") or e["id"],
                                   "channel": e.get("channel") or e.get("uploader") or ""})
         except Exception:
-            pass  # the clicked video still plays (and loops)
+            pass  # the list plays on (and loops) as it is
+        finally:
+            mixing["busy"] = False
+
+    def start_mix(vid):
+        if mixing["busy"] or not vid or vid in mixing["seeds"]:
+            return
+        mixing["busy"] = True
+        mixing["seeds"].add(vid)
+        threading.Thread(target=expand_mix, args=(f"https://www.youtube.com/watch?v={vid}&list=RD{vid}",), daemon=True).start()
+
     if cfg.get("mix") and queue:
-        import threading
-        threading.Thread(target=expand_mix, daemon=True).start()
+        m = re.search(r"v=([\w-]{11})", queue[0]["url"])
+        start_mix(m.group(1) if m else None)
 
     def key(it):
         m = re.search(r"v=([\w-]{11})", it.get("url", ""))
@@ -641,7 +672,7 @@ def yt_player(queue_file):
     def save_state(seek=0.0, hidden=False):
         if state_file and state.get("cur"):
             item_, from_list_, i_ = state["cur"]
-            save(state_file, {"queue": queue, "i": i_, "from_list": from_list_, "item": item_, "output": cfg.get("output", ""),
+            save(state_file, {"queue": queue, "i": i_, "from_list": from_list_, "item": item_, "output": cfg.get("output", ""), "topup": topup,
                               "seek": max(0, int(seek)), "hidden": hidden, "time": time.time()})
 
     def hide(*_):
@@ -652,6 +683,7 @@ def yt_player(queue_file):
         except (OSError, ValueError):
             pass
         save_state(pos - 2, hidden=True)  # a little before, for context
+        write_coming([])  # nothing plays now (⏵ Resume brings the list back)
         try:
             mpv(["quit"])
         except OSError:
@@ -695,8 +727,93 @@ def yt_player(queue_file):
                 out.append(queue[(state["next_i"] + 1) % len(queue)])
         return out
 
+    coming_file = Path(cfg["coming"]) if cfg.get("coming") else None
+    shown_coming = {"list": None}
+
+    def write_coming(entries):
+        """What the list plays after the current video, for the shell's Up next view (Loop: nothing,
+        Shuffle: only the next pick, which is already decided)."""
+        if coming_file and entries != shown_coming["list"]:
+            shown_coming["list"] = entries
+            save(coming_file, entries)
+
+    def coming():
+        nxt = state["next_i"]
+        if nxt is None or not queue or options().get("loop"):
+            return []
+        count = 1 if options().get("shuffle") else min(10, len(queue))
+        playing = state["cur"][2] if state["cur"] and state["cur"][1] else None  # the list video playing now
+        out, n = [], nxt
+        for _ in range(count):
+            if n == playing:
+                break  # wrapped around to the video that's playing: not "coming up"
+            out.append({**queue[n], "i": n})
+            n = (n + 1) % len(queue)
+            if n == nxt:
+                break
+        return out
+
+    cmd_file = Path(cfg["commands"]) if cfg.get("commands") else None
+
+    def process_commands(i):
+        """Reorder / remove list entries from the shell's Up next view; returns the adjusted index."""
+        if not cmd_file or not cmd_file.exists():
+            return i
+        work = cmd_file.with_name(cmd_file.name + ".work")
+        try:
+            cmd_file.replace(work)  # take the batch atomically; new commands start a fresh file
+            lines = work.read_text().splitlines()
+            work.unlink(missing_ok=True)
+        except OSError:
+            return i
+        shuffle = options().get("shuffle")
+        playing = i if state["cur"] and state["cur"][1] else None  # list index on screen now
+        for line in lines:
+            try:
+                c = json.loads(line)
+            except ValueError:
+                continue
+            n = c.get("move", c.get("remove"))
+            if not isinstance(n, int) or not 0 <= n < len(queue) or n == playing:
+                continue
+            if "move" in c:
+                if shuffle:
+                    continue  # no fixed order to edit
+                m = (n + (1 if c.get("delta", 0) > 0 else -1)) % len(queue)
+                if m != playing:
+                    queue[n], queue[m] = queue[m], queue[n]
+            else:
+                del queue[n]
+                if not queue:
+                    break
+                if n < i:
+                    i -= 1
+                    if playing is not None:
+                        playing -= 1
+                i %= len(queue)
+        if queue:
+            if playing is not None:
+                nxt = state["next_i"]
+                state["next_i"] = plan_next(i) if not shuffle or nxt is None or nxt >= len(queue) or nxt == i else nxt
+            else:
+                state["next_i"] = i  # an Up next video plays; the list resumes here
+            state["cur"] = (state["cur"][0], state["cur"][1], i) if state["cur"] else None
+        state["qlen"] = len(queue)
+        write_coming(coming())
+        return i
+
+    def ahead(i):
+        """Unplayed list videos still to come (shuffle: any not played yet)."""
+        if options().get("shuffle"):
+            return sum(1 for q in queue if key(q).split(".")[0] not in played)
+        return len(queue) - 1 - i
+
     def prefetch(i, item):
         reap()
+        i = process_commands(i)
+        if topup and queue and ahead(i) < 5:  # nearly through the Mix: fetch more for what's playing now
+            start_mix(key(item).split(".")[0])
+        write_coming(coming())
         if len(queue) != state["qlen"]:  # the Mix arrived: plan the list's next video again
             state["qlen"] = len(queue)
             if state["cur"] and state["cur"][1]:
@@ -710,6 +827,7 @@ def yt_player(queue_file):
                 if not cached(it) and time.time() - failed.get(key(it), 0) >= 60:
                     download(it)
                     break
+        return i
 
     player_started = False
     seek = float(cfg.get("seek") or 0)  # resuming: the first video starts here
@@ -722,6 +840,7 @@ def yt_player(queue_file):
         while item:
             state["skip"], state["back"], state["item"] = False, False, item
             state["cur"] = (item, from_list, i)
+            played.add(key(item).split(".")[0])
             # the list continues after a list video; after an Up next video it resumes at i itself
             state["next_i"] = (plan_next(i) if from_list else i) if queue else None
             save_state(seek)
@@ -733,6 +852,7 @@ def yt_player(queue_file):
                 download(item)
                 while not path and not state["skip"]:
                     reap()
+                    i = process_commands(i)
                     path = cached(item)
                     if not path and key(item) not in downloads:
                         break  # the download failed
@@ -743,7 +863,7 @@ def yt_player(queue_file):
                 os.utime(path)  # most recently used: last to be pruned
                 # 2. play it
                 if not player_started:
-                    subprocess.Popen(["mpvpaper", "-l", "bottom", "-o", cfg["mpv_opts"] + (f" start={int(seek)}" if seek else ""),
+                    subprocess.Popen(["mpvpaper", "-l", "bottom", "-o", cfg["mpv_opts"],
                                       cfg.get("output") or "ALL", str(path)],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
                     for _ in range(60):
@@ -754,22 +874,27 @@ def yt_player(queue_file):
                         return 0
                     player_started = True
                     if seek:
-                        # resume: "start" must stay set until the file has actually opened (clearing it
-                        # straight away raced the load and the video began at 0), then confirm the position
+                        # Resume: mpvpaper reloads the file itself while it sets up its surface ("Restoring
+                        # previous time"), which undid a start= option (videos resumed from 0). So: watch the
+                        # position and seek whenever it's behind, until it has held for ~2 s (max ~12 s).
+                        held = 0
                         for _ in range(40):
                             try:
-                                pos = json.loads(mpv(["get_property", "time-pos"]))
-                                if pos.get("error") == "success":
-                                    break
+                                pos = json.loads(mpv(["get_property", "time-pos"])).get("data")
                             except (OSError, ValueError):
-                                pass
-                            time.sleep(0.25)
-                        call(["set_property", "start", "none"])  # only this first file starts mid-way
-                        try:
-                            if (json.loads(mpv(["get_property", "time-pos"])).get("data") or 0) < seek - 3:
-                                call(["seek", int(seek), "absolute+exact"])
-                        except (OSError, ValueError):
-                            pass
+                                pos = None
+                            if isinstance(pos, (int, float)):
+                                if pos < seek - 3:
+                                    held = 0
+                                    try:
+                                        mpv(["seek", int(seek), "absolute+exact"])
+                                    except OSError:
+                                        pass
+                                else:
+                                    held += 1
+                                    if held >= 7:
+                                        break
+                            time.sleep(0.3)
                 else:
                     call(["loadfile", str(path), "replace", -1, f"start={int(seek)}" if seek else "start=none"])
                 seek = 0
@@ -787,11 +912,18 @@ def yt_player(queue_file):
                     except (OSError, ValueError):
                         if not _mpv_alive():
                             return 0
-                    prefetch(i, item)
+                    i = prefetch(i, item)
                     time.sleep(0.4)
             elif not state["skip"]:
                 time.sleep(3)  # couldn't download it (gone, region-locked, offline): move on
             # 4. what's next
+            jump = load(Path(cfg["jump"]), None) if cfg.get("jump") else None
+            if jump is not None:  # an autoplay video picked in Up next: continue the list from it
+                Path(cfg["jump"]).unlink(missing_ok=True)
+                if isinstance(jump.get("i"), int) and 0 <= jump["i"] < len(queue):
+                    history = (history + [(item, from_list, i)])[-50:]
+                    i, item, from_list = jump["i"], queue[jump["i"]], True
+                    continue
             if state["back"]:  # Previous: the video before this one (or this one again from the start)
                 if history:
                     item, from_list, i = history.pop()
@@ -809,6 +941,7 @@ def yt_player(queue_file):
                 item, from_list = (queue[i] if queue else None), True
         return 0
     finally:
+        write_coming([])
         for proc in downloads.values():
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
@@ -821,6 +954,92 @@ def yt_player(queue_file):
                 pass
 
 
+# ── local wallpaper thumbnails (collage / big cards) ──────────────────────
+
+LOCAL_THUMBS = CACHE / "local-thumbs"
+VIDEO_EXTS = {".mp4", ".webm", ".mov", ".avi", ".mkv"}
+
+
+def _local_key(path, st):
+    return hashlib.sha1(f"{path}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()[:20]
+
+
+def _make_local_thumb(path, out):
+    video = Path(path).suffix.lower() in VIDEO_EXTS
+    if not video:  # Pillow, if there: decodes JPEGs at reduced size (~10x faster than ffmpeg)
+        try:
+            from PIL import Image, ImageOps
+            tmp = Path(str(out) + ".tmp.jpg")
+            with Image.open(path) as im:
+                im.draft("RGB", (480, 480))
+                im = ImageOps.exif_transpose(im).convert("RGB")  # phone photos stay upright
+                im.thumbnail((480, 480))
+                im.save(tmp, "JPEG", quality=82)
+            tmp.replace(out)
+            return True
+        except Exception:
+            pass  # no Pillow, or a format it can't read: ffmpeg below
+    cmd = ["ffmpeg", "-v", "error", "-y"] + (["-ss", "1"] if video else []) + ["-i", path, "-frames:v", "1",
+           "-vf", "scale='if(gt(iw,ih),min(480,iw),-2)':'if(gt(iw,ih),-2,min(480,ih))'", "-q:v", "4", str(out) + ".tmp.jpg"]
+    run = subprocess.run(cmd, capture_output=True, timeout=60)
+    tmp = Path(str(out) + ".tmp.jpg")
+    if run.returncode != 0 or not tmp.exists():
+        tmp.unlink(missing_ok=True)
+        if video:  # shorter than a second
+            run = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", path, "-frames:v", "1", "-vf",
+                                  "scale='if(gt(iw,ih),min(480,iw),-2)':'if(gt(iw,ih),-2,min(480,ih))'", "-q:v", "4", str(tmp)],
+                                 capture_output=True, timeout=60)
+        if run.returncode != 0 or not tmp.exists():
+            return False
+    tmp.replace(out)
+    return True
+
+
+def local_thumbs(list_file):
+    paths = [l for l in Path(list_file).read_text().splitlines() if l.strip()]
+    LOCAL_THUMBS.mkdir(parents=True, exist_ok=True)
+    index_file = LOCAL_THUMBS / "index.json"
+    index = load(index_file, {})  # key -> [w, h]
+    todo, keep = [], set()
+    for path in paths:
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        key = _local_key(path, st)
+        keep.add(key)
+        thumb = LOCAL_THUMBS / (key + ".jpg")
+        if thumb.exists() and key in index:
+            w, h = index[key]
+            emit({"path": path, "w": w, "h": h, "thumb": thumb.as_uri()})
+        else:
+            todo.append((path, key, thumb))
+
+    def work(job):
+        path, key, thumb = job
+        ok = thumb.exists() or _make_local_thumb(path, thumb)
+        size = image_size(thumb) if ok else None  # the thumbnail keeps the shape: its size is the ratio
+        return path, key, thumb, ok, size
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as pool:
+        for path, key, thumb, ok, size in pool.map(work, todo):
+            done += 1
+            if ok and size and all(size):
+                index[key] = list(size)
+                emit({"path": path, "w": size[0], "h": size[1], "thumb": thumb.as_uri()})
+            if done % 25 == 0 or done == len(todo):
+                emit({"progress": done, "total": len(todo)})
+                save(index_file, index)
+    # drop thumbnails of wallpapers that were deleted, moved or changed
+    for f in LOCAL_THUMBS.glob("*.jpg"):
+        if f.stem not in keep:
+            f.unlink(missing_ok=True)
+    save(index_file, {k: v for k, v in index.items() if k in keep})
+    emit({"done": True})
+    return 0
+
+
 # ── cli ──────────────────────────────────────────────────────────────────
 
 def main(argv):
@@ -830,6 +1049,8 @@ def main(argv):
         return mpv_watch()
     if len(argv) == 2 and argv[0] == "yt-player":
         return yt_player(argv[1])
+    if len(argv) == 2 and argv[0] == "local-thumbs":
+        return local_thumbs(argv[1])
     if len(argv) == 2 and argv[0] == "mpv":
         try:
             print(mpv(json.loads(argv[1])))

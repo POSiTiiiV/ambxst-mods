@@ -60,7 +60,7 @@ index b60e100..2846625 100644
          Connections {
              target: GlobalStates.wallpaperManager
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index f914730..61b71b1 100644
+index f914730..29bd871 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -14,7 +14,7 @@ FocusScope {
@@ -72,7 +72,188 @@ index f914730..61b71b1 100644
      property int selectedIndex: GlobalStates.wallpaperSelectedIndex
  
      // Función para actualizar el índice seleccionado de forma centralizada
-@@ -136,6 +136,19 @@ FocusScope {
+@@ -89,7 +89,179 @@ FocusScope {
+     property var activeFilters: []  // Lista de tipos de archivo seleccionados para filtrar
+ 
+     // Configuración interna del grid
+-    readonly property int gridColumns: 7
++    readonly property int gridColumns: KpoppingService.gridColumns // positive.ambxst-kpopping: card size setting (7 = Ambxst's)
++
++    // positive.ambxst-kpopping: collage ("Fit to content"): equal-height rows, each card as wide as its
++    // picture's shape needs, rows stretched to the full width (the last one isn't). {rows, rowOf}
++    readonly property var kpRows: KpoppingService.collage ? kpBuildRows(filteredWallpapers, wallpaperGridContainer.width, KpoppingService.localThumbs, KpoppingService.photos) : ({ rows: [], rowOf: [] })
++    function kpBuildRows(list, width, _thumbs, _photos) {
++        const gap = wallpaperMargin * 2, target = width / gridColumns * 1.15;
++        const rows = [], rowOf = [];
++        let cur = [], sum = 0;
++        if (width <= 0)
++            return { rows: rows, rowOf: rowOf };
++        for (let i = 0; i < list.length; i++) {
++            const a = Math.max(0.45, Math.min(3.2, KpoppingService.aspect(list[i])));
++            cur.push({ i: i, a: a });
++            sum += a;
++            if (sum * target + (cur.length - 1) * gap >= width) {
++                const h = (width - (cur.length - 1) * gap) / sum;
++                rows.push({ h: h, items: cur.map(c => ({ i: c.i, w: c.a * h })) });
++                cur.forEach(c => rowOf[c.i] = rows.length - 1);
++                cur = [];
++                sum = 0;
++            }
++        }
++        if (cur.length) {
++            rows.push({ h: target, items: cur.map(c => ({ i: c.i, w: c.a * target })) });
++            cur.forEach(c => rowOf[c.i] = rows.length - 1);
++        }
++        return { rows: rows, rowOf: rowOf };
++    }
++    // positive.ambxst-kpopping: masonry (Pinterest): fixed-width columns, each card as tall as its
++    // picture's shape needs, every card into the currently shortest column. {items[{x,y,w,h,col,row}], height, cols}
++    readonly property var kpMasonryLayout: KpoppingService.masonry ? kpBuildMasonry(filteredWallpapers, wallpaperGridContainer.width, KpoppingService.localThumbs, KpoppingService.photos) : ({ items: [], height: 0, cols: [] })
++    function kpBuildMasonry(list, width, _thumbs, _photos) {
++        const gap = wallpaperMargin * 2, n = Math.max(1, gridColumns);
++        const w = (width - (n - 1) * gap) / n;
++        const heights = [], cols = [], items = [];
++        for (let c = 0; c < n; c++) {
++            heights.push(0);
++            cols.push([]);
++        }
++        if (width <= 0)
++            return { items: items, height: 0, cols: cols };
++        for (let i = 0; i < list.length; i++) {
++            const a = Math.max(0.45, Math.min(3.2, KpoppingService.aspect(list[i])));
++            let c = 0;
++            for (let k = 1; k < n; k++)
++                if (heights[k] < heights[c])
++                    c = k;
++            const h = w / a;
++            items.push({ x: c * (w + gap), y: heights[c], w: w, h: h, col: c, row: cols[c].length });
++            cols[c].push(i);
++            heights[c] += h + gap;
++        }
++        return { items: items, height: Math.max.apply(null, heights), cols: cols };
++    }
++    // arrows in masonry: ↑/↓ within the column, ←/→ to the card at the same height next door
++    function kpMasonryStep(dx, dy) {
++        const L = kpMasonryLayout, it = L.items[selectedIndex];
++        if (!it) {
++            setSelectedIndex(0);
++            return;
++        }
++        let to = -1;
++        if (dy) {
++            const col = L.cols[it.col], r = it.row + dy;
++            if (r >= 0 && r < col.length)
++                to = col[r];
++        } else {
++            const c = it.col + dx;
++            if (c >= 0 && c < L.cols.length && L.cols[c].length) {
++                const mid = it.y + it.h / 2;
++                let dist = Infinity;
++                for (const j of L.cols[c]) {
++                    const o = L.items[j], d = Math.abs(o.y + o.h / 2 - mid);
++                    if (d < dist) {
++                        dist = d;
++                        to = j;
++                    }
++                }
++            }
++        }
++        if (to < 0)
++            return;
++        setSelectedIndex(to);
++        const t = L.items[to], v = kpMasonryView;   // keep it in view
++        if (t.y < v.contentY)
++            v.contentY = t.y;
++        else if (t.y + t.h > v.contentY + v.height)
++            v.contentY = Math.min(t.y + t.h - v.height, Math.max(0, v.contentHeight - v.height));
++    }
++
++    // up / down in the collage: the card in the next row nearest to this one's centre
++    function kpCollageStep(dir) {
++        const r = kpRows, gap = wallpaperMargin * 2;
++        const ri = r.rowOf[selectedIndex];
++        if (ri === undefined) {
++            setSelectedIndex(0);
++            return;
++        }
++        const to = ri + dir;
++        if (to < 0 || to >= r.rows.length)
++            return;
++        let x = 0;
++        for (const it of r.rows[ri].items) {
++            if (it.i === selectedIndex) {
++                x += it.w / 2;
++                break;
++            }
++            x += it.w + gap;
++        }
++        let best = r.rows[to].items[0].i, dist = Infinity, cx = 0;
++        for (const it of r.rows[to].items) {
++            const d = Math.abs(cx + it.w / 2 - x);
++            if (d < dist) {
++                dist = d;
++                best = it.i;
++            }
++            cx += it.w + gap;
++        }
++        setSelectedIndex(best);
++        kpCollage.positionViewAtIndex(to, ListView.Contain);
++    }
++    function kpThumb(path) {
++        if (!path)
++            return "";
++        if (path.startsWith("https://"))
++            return KpoppingService.thumbs[path] || "";
++        const lt = KpoppingService.localThumb(path);
++        if (lt || !GlobalStates.wallpaperManager)
++            return lt;
++        return "file://" + GlobalStates.wallpaperManager.getThumbnailPath(path) + "?v=" + GlobalStates.wallpaperManager.thumbnailsVersion;
++    }
++    // what a click on a card does (grid and collage)
++    function kpOpen(path, mouse) {
++        if (KpoppingService.active) {
++            KpoppingService.activate(path, isPerScreen ? currentScreenName : "", (mouse.modifiers & Qt.ShiftModifier) !== 0, (mouse.modifiers & Qt.ControlModifier) !== 0);
++        } else if (GlobalStates.wallpaperManager) {
++            if (isPerScreen && currentScreenName !== "")
++                GlobalStates.wallpaperManager.setWallpaper(path, currentScreenName);
++            else
++                GlobalStates.wallpaperManager.setWallpaper(path);
++        }
++    }
++    // positive.ambxst-kpopping: drag a card in Up next to reorder it (points are in wallpaperGridContainer)
++    property int kpDragFrom: -1
++    property int kpDragTo: -1
++    property string kpDragSrc: ""
++    property point kpDragPoint: Qt.point(0, 0)
++    property rect kpDropRect: Qt.rect(0, 0, 0, 0)
++    function kpDragStart(i, src) {
++        kpDragFrom = i;
++        kpDragTo = i;
++        kpDragSrc = src;
++    }
++    function kpDragMove(p) {
++        kpDragPoint = p;
++        const i = wallpaperGrid.indexAt(p.x + wallpaperMargin + wallpaperGrid.contentX, p.y + wallpaperMargin + wallpaperGrid.contentY);
++        if (i >= 0 && KpoppingService.isQueueViewCard(filteredWallpapers[i]))
++            kpDragTo = i;
++        const item = wallpaperGrid.itemAtIndex(kpDragTo);
++        if (item) {
++            const at = item.mapToItem(wallpaperGridContainer, 0, 0);
++            kpDropRect = Qt.rect(at.x, at.y, item.width, item.height);
++        }
++    }
++    function kpDragEnd() {
++        if (kpDragFrom < 0)
++            return;
++        const from = kpDragFrom, to = kpDragTo, src = kpDragSrc;
++        kpDragFrom = -1;
++        if (to !== from)
++            setSelectedIndex(from + KpoppingService.ytQueueMoveBy(src, to - from));
++    }
+     readonly property int wallpaperMargin: 4
+ 
+     // Array de elementos focusables para navegación cíclica
+@@ -136,6 +308,19 @@ FocusScope {
                  settingsBtn.forceActiveFocus();
              }
          },
@@ -92,7 +273,23 @@ index f914730..61b71b1 100644
          {
              id: "filters",
              focusFunc: function () {
-@@ -254,6 +267,8 @@ FocusScope {
+@@ -214,7 +399,14 @@ FocusScope {
+             const rowStartIndex = currentRow * wallpapersTabRoot.gridColumns;
+ 
+             // Posicionar para que la fila esté centrada verticalmente
+-            wallpaperGrid.positionViewAtIndex(rowStartIndex, GridView.Center);
++            if (KpoppingService.collage && kpRows.rowOf[currentIndex] !== undefined) // positive.ambxst-kpopping
++                kpCollage.positionViewAtIndex(kpRows.rowOf[currentIndex], ListView.Center);
++            else if (KpoppingService.masonry && kpMasonryLayout.items[currentIndex]) {
++                const t = kpMasonryLayout.items[currentIndex];
++                kpMasonryView.contentY = Math.max(0, Math.min(t.y - (kpMasonryView.height - t.h) / 2, kpMasonryLayout.height - kpMasonryView.height));
++            }
++            else
++                wallpaperGrid.positionViewAtIndex(rowStartIndex, GridView.Center);
+         }
+     }
+ 
+@@ -254,6 +446,8 @@ FocusScope {
  
      // Propiedad calculada que filtra los fondos de pantalla según el texto de búsqueda y tipos activos.
      property var filteredWallpapers: {
@@ -101,7 +298,7 @@ index f914730..61b71b1 100644
          if (!GlobalStates.wallpaperManager)
              return [];
  
-@@ -320,6 +335,8 @@ FocusScope {
+@@ -320,6 +514,8 @@ FocusScope {
                  // Manejo de eventos de búsqueda y teclado.
                  onSearchTextChanged: text => {
                      searchText = text;
@@ -110,7 +307,7 @@ index f914730..61b71b1 100644
                      if (text.length > 0 && filteredWallpapers.length > 0) {
                          setSelectedIndex(0);
                      } else {
-@@ -331,6 +348,18 @@ FocusScope {
+@@ -331,6 +527,27 @@ FocusScope {
                      Visibilities.setActiveModule("");
                  }
  
@@ -121,6 +318,15 @@ index f914730..61b71b1 100644
 +                        KpoppingService.activate(filteredWallpapers[selectedIndex], isPerScreen ? currentScreenName : "", true);
 +                }
 +                onCtrlRPressed: KpoppingService.discardPreview()
++                // YouTube Up next: move the selected queued video earlier / later
++                onCtrlUpPressed: {
++                    if (selectedIndex >= 0 && selectedIndex < filteredWallpapers.length)
++                        setSelectedIndex(selectedIndex + KpoppingService.ytQueueMove(filteredWallpapers[selectedIndex], -1));
++                }
++                onCtrlDownPressed: {
++                    if (selectedIndex >= 0 && selectedIndex < filteredWallpapers.length)
++                        setSelectedIndex(selectedIndex + KpoppingService.ytQueueMove(filteredWallpapers[selectedIndex], 1));
++                }
 +                onCtrlPPressed: {   // YouTube: play next (Up next)
 +                    if (KpoppingService.active && KpoppingService.source === "youtube" && selectedIndex >= 0 && selectedIndex < filteredWallpapers.length)
 +                        KpoppingService.activate(filteredWallpapers[selectedIndex], isPerScreen ? currentScreenName : "", false, true);
@@ -129,7 +335,59 @@ index f914730..61b71b1 100644
                  onTabPressed: {
                      focusNextElement();
                  }
-@@ -382,7 +411,9 @@ FocusScope {
+@@ -340,6 +557,14 @@ FocusScope {
+                 }
+ 
+                 onDownPressed: {
++                    if (KpoppingService.collage && filteredWallpapers.length > 0) { // positive.ambxst-kpopping
++                        kpCollageStep(1);
++                        return;
++                    }
++                    if (KpoppingService.masonry && filteredWallpapers.length > 0) {
++                        kpMasonryStep(0, 1);
++                        return;
++                    }
+                     if (filteredWallpapers.length > 0) {
+                         if (selectedIndex < filteredWallpapers.length - 1) {
+                             let newIndex = selectedIndex + wallpapersTabRoot.gridColumns;
+@@ -353,6 +578,14 @@ FocusScope {
+                     }
+                 }
+                 onUpPressed: {
++                    if (KpoppingService.collage && filteredWallpapers.length > 0) { // positive.ambxst-kpopping
++                        kpCollageStep(-1);
++                        return;
++                    }
++                    if (KpoppingService.masonry && filteredWallpapers.length > 0) {
++                        kpMasonryStep(0, -1);
++                        return;
++                    }
+                     if (filteredWallpapers.length > 0) {
+                         if (selectedIndex === -1) {
+                             setSelectedIndex(0);
+@@ -362,6 +595,10 @@ FocusScope {
+                     }
+                 }
+                 onLeftPressed: {
++                    if (KpoppingService.masonry && filteredWallpapers.length > 0) { // positive.ambxst-kpopping
++                        kpMasonryStep(-1, 0);
++                        return;
++                    }
+                     if (filteredWallpapers.length > 0) {
+                         if (selectedIndex === -1) {
+                             setSelectedIndex(0);
+@@ -371,6 +608,10 @@ FocusScope {
+                     }
+                 }
+                 onRightPressed: {
++                    if (KpoppingService.masonry && filteredWallpapers.length > 0) { // positive.ambxst-kpopping
++                        kpMasonryStep(1, 0);
++                        return;
++                    }
+                     if (filteredWallpapers.length > 0) {
+                         if (selectedIndex < filteredWallpapers.length - 1) {
+                             setSelectedIndex(selectedIndex + 1);
+@@ -382,7 +623,9 @@ FocusScope {
                  onAccepted: {
                      if (selectedIndex >= 0 && selectedIndex < filteredWallpapers.length) {
                          let selectedWallpaper = filteredWallpapers[selectedIndex];
@@ -140,7 +398,7 @@ index f914730..61b71b1 100644
                              if (isPerScreen && currentScreenName !== "") {
                                  GlobalStates.wallpaperManager.setWallpaper(selectedWallpaper, currentScreenName);
                              } else {
-@@ -1049,6 +1080,93 @@ FocusScope {
+@@ -1049,6 +1292,93 @@ FocusScope {
                  }
              }
  
@@ -234,7 +492,7 @@ index f914730..61b71b1 100644
              // Scheme Selector a la derecha
              Item {
                  visible: false
-@@ -1090,10 +1208,25 @@ FocusScope {
+@@ -1090,10 +1420,25 @@ FocusScope {
                  id: wallpapersFilterBar
                  anchors.horizontalCenter: parent.horizontalCenter
                  width: Math.min(implicitWidth, parent.width)
@@ -262,7 +520,7 @@ index f914730..61b71b1 100644
                  }
  
                  onEscapePressedOnFilters: {
-@@ -1124,6 +1257,42 @@ FocusScope {
+@@ -1124,15 +1469,290 @@ FocusScope {
              readonly property real gridWidth: width + (wallpapersTabRoot.wallpaperMargin * 2)
              readonly property real cellSize: gridWidth / wallpapersTabRoot.gridColumns
  
@@ -302,10 +560,260 @@ index f914730..61b71b1 100644
 +                }
 +            }
 +
++            // positive.ambxst-kpopping: making the bigger / shape-keeping thumbnails (first time only)
++            Rectangle {
++                anchors.horizontalCenter: parent.horizontalCenter
++                anchors.bottom: parent.bottom
++                anchors.bottomMargin: 8
++                z: 50
++                width: ltText.implicitWidth + 24
++                height: 32
++                radius: height / 2
++                color: Colors.surface
++                visible: !KpoppingService.active && KpoppingService.wantLocalThumbs && KpoppingService.localThumbsProgress !== ""
++
++                Text {
++                    id: ltText
++                    anchors.centerIn: parent
++                    text: "Making thumbnails… " + KpoppingService.localThumbsProgress
++                    color: Colors.overSurface
++                    font.family: Config.theme.font
++                    font.pixelSize: Config.theme.fontSize
++                }
++            }
++
++            // positive.ambxst-kpopping: one card for the Rows and Masonry layouts (a Loader's cardIdx says which)
++            Component {
++                id: kpCardComp
++                Item {
++                    id: kpCard
++                    readonly property int idx: parent ? parent.cardIdx : -1
++                    readonly property string src: wallpapersTabRoot.filteredWallpapers[idx] || ""
++                    readonly property bool selected: selectedIndex === idx
++
++                    ClippingRectangle {
++                        anchors.fill: parent
++                        radius: Styling.radius(4)
++                        color: Colors.surface
++
++                        Image {
++                            anchors.fill: parent
++                            source: wallpapersTabRoot.kpThumb(kpCard.src)
++                            fillMode: Image.PreserveAspectCrop
++                            asynchronous: true
++                            cache: true
++                            mipmap: true
++                            sourceSize.width: Math.ceil(kpCard.width)
++                        }
++
++                        // name / photo details on the selected card
++                        Rectangle {
++                            anchors.left: parent.left
++                            anchors.right: parent.right
++                            anchors.bottom: parent.bottom
++                            height: 26
++                            visible: kpCard.selected
++                            color: Qt.rgba(0, 0, 0, 0.55)
++
++                            Text {
++                                anchors.fill: parent
++                                anchors.leftMargin: 8
++                                anchors.rightMargin: 8
++                                verticalAlignment: Text.AlignVCenter
++                                elide: Text.ElideRight
++                                text: kpCard.src === wallpapersTabRoot.activeWallpaperPath ? I18n.t("wallpapers.current")
++                                    : KpoppingService.active ? KpoppingService.label(KpoppingService.bySrc[kpCard.src]) : kpCard.src.split("/").pop()
++                                color: "white"
++                                font.family: Config.theme.font
++                                font.pixelSize: Config.theme.fontSize
++                                font.weight: Font.Bold
++                            }
++                        }
++                    }
++
++                    Rectangle {
++                        anchors.fill: parent
++                        radius: Styling.radius(4)
++                        color: "transparent"
++                        border.width: 2
++                        border.color: Styling.srItem("overprimary")
++                        visible: kpCard.selected
++                    }
++
++                    // spinner while a kpopping photo downloads
++                    Rectangle {
++                        anchors.fill: parent
++                        radius: Styling.radius(4)
++                        color: Qt.rgba(0, 0, 0, 0.5)
++                        visible: KpoppingService.downloading !== "" && KpoppingService.downloading === kpCard.src
++
++                        Text {
++                            anchors.centerIn: parent
++                            text: Icons.circleNotch
++                            font.family: Icons.font
++                            font.pixelSize: 24
++                            color: "white"
++                            NumberAnimation on rotation {
++                                from: 0
++                                to: 360
++                                duration: 1000
++                                loops: Animation.Infinite
++                                running: parent.visible
++                            }
++                        }
++                    }
++
++                    MouseArea {
++                        anchors.fill: parent
++                        hoverEnabled: !kpCollage.moving && !kpMasonryView.moving
++                        cursorShape: Qt.PointingHandCursor
++                        onEntered: setSelectedIndex(kpCard.idx)
++                        onClicked: mouse => wallpapersTabRoot.kpOpen(kpCard.src, mouse)
++                    }
++                }
++            }
++
++            // positive.ambxst-kpopping: Rows ("Fit to content"), from wallpapersTabRoot.kpRows
++            ListView {
++                id: kpCollage
++                anchors.fill: parent
++                visible: KpoppingService.collage
++                clip: true
++                spacing: wallpapersTabRoot.wallpaperMargin * 2
++                boundsBehavior: Flickable.StopAtBounds
++                cacheBuffer: height
++                reuseItems: true
++                model: KpoppingService.collage ? wallpapersTabRoot.kpRows.rows : []
++
++                // kpopping pages load near the end; a new page keeps the scroll position
++                property real kpSavedY: 0
++                onContentYChanged: {
++                    if (!KpoppingService.appending)
++                        kpSavedY = contentY;
++                    if (KpoppingService.active && contentHeight > height && contentY + height > contentHeight - height / 2)
++                        KpoppingService.loadMore();
++                }
++                Connections {
++                    target: KpoppingService
++                    function onPhotosChanged() {
++                        if (!KpoppingService.appending || !KpoppingService.collage)
++                            return;
++                        Qt.callLater(function () {
++                            kpCollage.contentY = kpCollage.kpSavedY;
++                            KpoppingService.appending = false;
++                        });
++                    }
++                }
++
++                delegate: Row {
++                    id: kpRow
++                    required property var modelData
++                    height: modelData.h
++                    spacing: wallpapersTabRoot.wallpaperMargin * 2
++
++                    Repeater {
++                        model: kpRow.modelData.items
++                        delegate: Loader {
++                            required property var modelData
++                            property int cardIdx: modelData.i
++                            width: modelData.w
++                            height: kpRow.height
++                            sourceComponent: kpCardComp
++                        }
++                    }
++                }
++            }
++
++            // positive.ambxst-kpopping: Masonry (Pinterest), positions from wallpapersTabRoot.kpMasonryLayout.
++            // Every position is a cheap Loader; the card itself only exists near the visible area.
++            Flickable {
++                id: kpMasonryView
++                anchors.fill: parent
++                visible: KpoppingService.masonry
++                clip: true
++                contentWidth: width
++                contentHeight: wallpapersTabRoot.kpMasonryLayout.height
++                boundsBehavior: Flickable.StopAtBounds
++                onContentYChanged: {
++                    if (KpoppingService.active && contentHeight > height && contentY + height > contentHeight - height / 2)
++                        KpoppingService.loadMore();
++                }
++
++                Repeater {
++                    model: KpoppingService.masonry ? wallpapersTabRoot.kpMasonryLayout.items.length : 0
++                    delegate: Loader {
++                        required property int index
++                        readonly property var box: wallpapersTabRoot.kpMasonryLayout.items[index]
++                        property int cardIdx: index
++                        x: box ? box.x : 0
++                        y: box ? box.y : 0
++                        width: box ? box.w : 0
++                        height: box ? box.h : 0
++                        active: !!box && y + height > kpMasonryView.contentY - kpMasonryView.height && y < kpMasonryView.contentY + 2 * kpMasonryView.height
++                        sourceComponent: kpCardComp
++                    }
++                }
++            }
++
++            // positive.ambxst-kpopping: while dragging in Up next: outline where it lands, the thumbnail under the cursor,
++            // and scrolling when held near the top / bottom edge
++            Rectangle {
++                z: 200
++                visible: wallpapersTabRoot.kpDragFrom >= 0 && wallpapersTabRoot.kpDragTo !== wallpapersTabRoot.kpDragFrom
++                x: wallpapersTabRoot.kpDropRect.x + wallpapersTabRoot.wallpaperMargin
++                y: wallpapersTabRoot.kpDropRect.y + wallpapersTabRoot.wallpaperMargin
++                width: wallpapersTabRoot.kpDropRect.width - wallpapersTabRoot.wallpaperMargin * 2
++                height: wallpapersTabRoot.kpDropRect.height - wallpapersTabRoot.wallpaperMargin * 2
++                color: "transparent"
++                radius: Styling.radius(2)
++                border.width: 3
++                border.color: Colors.primary
++            }
++            Image {
++                z: 201
++                visible: wallpapersTabRoot.kpDragFrom >= 0
++                width: Math.min(160, wallpaperGrid.cellWidth * 0.6)
++                height: Math.round(width * 9 / 16)
++                x: wallpapersTabRoot.kpDragPoint.x - width / 2
++                y: wallpapersTabRoot.kpDragPoint.y - height / 2
++                opacity: 0.85
++                fillMode: Image.PreserveAspectCrop
++                asynchronous: true
++                source: wallpapersTabRoot.kpDragFrom >= 0 ? wallpapersTabRoot.kpThumb(wallpapersTabRoot.kpDragSrc) : ""
++            }
++            Timer {
++                interval: 16
++                repeat: true
++                running: wallpapersTabRoot.kpDragFrom >= 0
++                onTriggered: {
++                    const p = wallpapersTabRoot.kpDragPoint, edge = 48;
++                    const step = p.y < edge ? -12 : p.y > wallpaperGridContainer.height - edge ? 12 : 0;
++                    if (!step)
++                        return;
++                    const maxY = Math.max(wallpaperGrid.originY, wallpaperGrid.originY + wallpaperGrid.contentHeight - wallpaperGrid.height);
++                    wallpaperGrid.contentY = Math.max(wallpaperGrid.originY, Math.min(maxY, wallpaperGrid.contentY + step));
++                    wallpapersTabRoot.kpDragMove(p);
++                }
++            }
++
              GridView {
                  id: wallpaperGrid
                  anchors.fill: parent
-@@ -1151,6 +1320,26 @@ FocusScope {
+                 anchors.margins: -wallpapersTabRoot.wallpaperMargin
+                 cellWidth: wallpaperGridContainer.cellSize
+-                cellHeight: wallpaperGridContainer.cellSize
++                // positive.ambxst-kpopping: YouTube tiles (16:9 + text) / list rows (thumbnail height + margins)
++                cellHeight: KpoppingService.ytList ? KpoppingService.ytListThumbHeight + wallpapersTabRoot.wallpaperMargin * 2 + 6
++                    : KpoppingService.ytTiles ? Math.round(wallpaperGridContainer.cellSize * 9 / 16) + 48 : wallpaperGridContainer.cellSize
++                visible: !KpoppingService.collage && !KpoppingService.masonry // positive.ambxst-kpopping: rows / masonry take over
+                 flow: GridView.FlowLeftToRight
+                 boundsBehavior: Flickable.StopAtBounds
+-                model: filteredWallpapers
++                model: KpoppingService.collage || KpoppingService.masonry ? [] : filteredWallpapers // positive.ambxst-kpopping: no hidden cards
+                 currentIndex: selectedIndex
+ 
+                 // Propiedad para detectar si está en movimiento (drag o flick)
+@@ -1151,6 +1771,26 @@ FocusScope {
                  flickDeceleration: 5000
                  maximumFlickVelocity: 8000
  
@@ -332,7 +840,27 @@ index f914730..61b71b1 100644
                  // Sincronizar selectedIndex cuando el GridView cambia su currentIndex
                  onCurrentIndexChanged: {
                      if (currentIndex !== selectedIndex && currentIndex >= 0) {
-@@ -1239,6 +1428,9 @@ FocusScope {
+@@ -1197,7 +1837,9 @@ FocusScope {
+                         Rectangle {
+                             anchors.fill: parent
+                             anchors.topMargin: -20
+-                            anchors.bottomMargin: 0
++                            // positive.ambxst-kpopping: the 28 px bottom band is room for the filename label; YouTube
++                            // tiles / list rows have no label, so the same thin frame all round
++                            anchors.bottomMargin: KpoppingService.ytTiles || KpoppingService.ytList ? -20 : 0
+                             anchors.leftMargin: -20
+                             anchors.rightMargin: -20
+                             color: "transparent"
+@@ -1221,7 +1863,7 @@ FocusScope {
+                                 property bool isCurrentWallpaper: (wallpaperGrid.currentIndex >= 0 && wallpaperGrid.currentIndex < filteredWallpapers.length) ? (filteredWallpapers[wallpaperGrid.currentIndex] === wallpapersTabRoot.activeWallpaperPath) : false
+                                 property bool showHoveredItem: currentItem && currentItem.isHovered && !visible
+ 
+-                                visible: selectedIndex >= 0 || showHoveredItem
++                                visible: (selectedIndex >= 0 || showHoveredItem) && !KpoppingService.ytTiles && !KpoppingService.ytList // positive.ambxst-kpopping: tiles / rows carry their own text
+ 
+                                 Rectangle {
+                                     anchors.verticalCenter: parent.verticalCenter
+@@ -1239,6 +1881,9 @@ FocusScope {
                                          text: {
                                              if (parent.parent.isCurrentWallpaper) {
                                                  return I18n.t("wallpapers.current");
@@ -342,7 +870,25 @@ index f914730..61b71b1 100644
                                              } else if (wallpaperGrid.currentIndex >= 0 && wallpaperGrid.currentIndex < filteredWallpapers.length) {
                                                  return filteredWallpapers[wallpaperGrid.currentIndex].split('/').pop();
                                              }
-@@ -1354,14 +1546,18 @@ FocusScope {
+@@ -1320,6 +1965,7 @@ FocusScope {
+                     width: wallpaperGrid.cellWidth
+                     height: wallpaperGrid.cellHeight
+                     color: "transparent"
++                    opacity: wallpapersTabRoot.kpDragFrom === index ? 0.3 : KpoppingService.active && KpoppingService.isDimmed(modelData) ? 0.55 : 1.0 // positive.ambxst-kpopping: autoplay cards in Up next / the card being dragged
+ 
+                     property bool isCurrentWallpaper: modelData === wallpapersTabRoot.activeWallpaperPath
+ 
+@@ -1342,6 +1988,9 @@ FocusScope {
+                     Item {
+                         anchors.fill: parent
+                         anchors.margins: wallpapersTabRoot.wallpaperMargin
++                        anchors.bottomMargin: wallpapersTabRoot.wallpaperMargin + (KpoppingService.ytTiles ? 48 : 0) // positive.ambxst-kpopping: room for the tile's text
++                        // positive.ambxst-kpopping: a YouTube list row's thumbnail is 16:9 on the left
++                        anchors.rightMargin: KpoppingService.ytList ? parent.width - wallpapersTabRoot.wallpaperMargin - Math.round(KpoppingService.ytListThumbHeight * 16 / 9) : wallpapersTabRoot.wallpaperMargin
+ 
+                         ClippingRectangle {
+                             anchors.fill: parent
+@@ -1354,14 +2003,18 @@ FocusScope {
                                      anchors.fill: parent
                                      sourceComponent: staticImageComponent
                                      property string sourceFile: modelData
@@ -363,7 +909,7 @@ index f914730..61b71b1 100644
  
                                      Text {
                                          anchors.centerIn: parent
-@@ -1376,11 +1572,34 @@ FocusScope {
+@@ -1376,11 +2029,34 @@ FocusScope {
                                              to: 360
                                              duration: 1000
                                              loops: Animation.Infinite
@@ -399,22 +945,174 @@ index f914730..61b71b1 100644
                          }
                      }
  
-@@ -1405,10 +1624,12 @@ FocusScope {
+@@ -1399,22 +2075,155 @@ FocusScope {
+                         onExited: {
+                             parent.isHovered = false;
                          }
-                         onReleased: parent.scale = 1.0
- 
+-                        onPressed: {
++                        // positive.ambxst-kpopping: Up next cards can be dragged to a new place (the grid doesn't flick then)
++                        readonly property bool kpCanDrag: KpoppingService.active && KpoppingService.ytQueueView && KpoppingService.isQueueViewCard(modelData)
++                        property point kpPress
++                        property bool kpDragged: false
++                        preventStealing: kpCanDrag
++                        onPressed: mouse => {
++                            kpPress = Qt.point(mouse.x, mouse.y);
++                            kpDragged = false;
+                             if (!wallpaperGrid.isScrolling)
+                                 parent.scale = 0.95;
+                         }
+-                        onReleased: parent.scale = 1.0
+-
 -                        onClicked: {
-+                        onClicked: mouse => {
-                             if (wallpaperGrid.isScrolling)
+-                            if (wallpaperGrid.isScrolling)
++                        onPositionChanged: mouse => {
++                            if (!pressed || !kpCanDrag && wallpapersTabRoot.kpDragFrom < 0)
                                  return;
 -                            if (GlobalStates.wallpaperManager) {
-+                            if (KpoppingService.active) {
-+                                KpoppingService.activate(modelData, isPerScreen ? currentScreenName : "", (mouse.modifiers & Qt.ShiftModifier) !== 0, (mouse.modifiers & Qt.ControlModifier) !== 0);
-+                            } else if (GlobalStates.wallpaperManager) {
-                                 if (isPerScreen && currentScreenName !== "") {
-                                     GlobalStates.wallpaperManager.setWallpaper(modelData, currentScreenName);
-                                 } else {
-@@ -1455,6 +1676,9 @@ FocusScope {
+-                                if (isPerScreen && currentScreenName !== "") {
+-                                    GlobalStates.wallpaperManager.setWallpaper(modelData, currentScreenName);
+-                                } else {
+-                                    GlobalStates.wallpaperManager.setWallpaper(modelData);
+-                                }
++                            if (wallpapersTabRoot.kpDragFrom < 0) {
++                                if (Math.hypot(mouse.x - kpPress.x, mouse.y - kpPress.y) < 12)
++                                    return;
++                                wallpapersTabRoot.kpDragStart(index, modelData);
++                                parent.scale = 1.0;
+                             }
++                            wallpapersTabRoot.kpDragMove(mapToItem(wallpaperGridContainer, mouse.x, mouse.y));
++                        }
++                        onReleased: {
++                            parent.scale = 1.0;
++                            kpDragged = wallpapersTabRoot.kpDragFrom >= 0;
++                            wallpapersTabRoot.kpDragEnd();
++                        }
++                        onCanceled: {
++                            parent.scale = 1.0;
++                            wallpapersTabRoot.kpDragEnd();
++                        }
++
++                        onClicked: mouse => {
++                            if (wallpaperGrid.isScrolling || kpDragged)
++                                return;
++                            wallpapersTabRoot.kpOpen(modelData, mouse); // positive.ambxst-kpopping
++                        }
++                    }
++
++                    // positive.ambxst-kpopping: YouTube list row text, like YouTube's search results
++                    Column {
++                        visible: KpoppingService.ytList
++                        anchors.left: parent.left
++                        anchors.right: parent.right
++                        anchors.verticalCenter: parent.verticalCenter
++                        anchors.leftMargin: wallpapersTabRoot.wallpaperMargin + Math.round(KpoppingService.ytListThumbHeight * 16 / 9) + 12
++                        anchors.rightMargin: wallpapersTabRoot.wallpaperMargin + 4
++                        spacing: 3
++                        readonly property var video: KpoppingService.ytList ? KpoppingService.bySrc[modelData] : null
++
++                        Text {
++                            width: parent.width
++                            text: parent.video ? parent.video.title : ""
++                            wrapMode: Text.Wrap
++                            maximumLineCount: KpoppingService.ytListThumbHeight >= 96 ? 2 : 1
++                            elide: Text.ElideRight
++                            color: isSelected ? Styling.srItem("overprimary") : Colors.overBackground
++                            font.family: Config.theme.font
++                            font.pixelSize: Config.theme.fontSize + (KpoppingService.ytListThumbHeight >= 132 ? 2 : 0)
++                            font.weight: Font.Bold
++                        }
++                        Text {
++                            width: parent.width
++                            text: parent.video ? parent.video.channel || "" : ""
++                            elide: Text.ElideRight
++                            color: Colors.overSurfaceVariant
++                            font.family: Config.theme.font
++                            font.pixelSize: Math.max(9, Config.theme.fontSize - 1)
++                        }
++                        Text {
++                            width: parent.width
++                            text: parent.video ? [parent.video.duration ? KpoppingService._clock(parent.video.duration) : "",
++                                                  parent.video.coming ? "autoplay" : KpoppingService.ytQueued(parent.video.id) ? "up next" : "",
++                                                  KpoppingService.ytInPlaylist(parent.video.id) ? "in My playlist" : ""].filter(t => t).join(" · ") : ""
++                            elide: Text.ElideRight
++                            color: Colors.overSurfaceVariant
++                            font.family: Config.theme.font
++                            font.pixelSize: Math.max(9, Config.theme.fontSize - 2)
++                        }
++                    }
++
++                    // positive.ambxst-kpopping: YouTube tile text, like YouTube's results: title, then channel · length
++                    Column {
++                        visible: KpoppingService.ytTiles
++                        anchors.left: parent.left
++                        anchors.right: parent.right
++                        anchors.bottom: parent.bottom
++                        anchors.leftMargin: wallpapersTabRoot.wallpaperMargin + 2
++                        anchors.rightMargin: wallpapersTabRoot.wallpaperMargin + 2
++                        anchors.bottomMargin: wallpapersTabRoot.wallpaperMargin + 2
++                        height: 44
++                        spacing: 2
++                        readonly property var video: KpoppingService.ytTiles ? KpoppingService.bySrc[modelData] : null
++
++                        Text {
++                            width: parent.width
++                            text: parent.video ? parent.video.title : ""
++                            elide: Text.ElideRight
++                            color: isSelected ? Styling.srItem("overprimary") : Colors.overBackground
++                            font.family: Config.theme.font
++                            font.pixelSize: Config.theme.fontSize
++                            font.weight: Font.Bold
++                        }
++                        Text {
++                            width: parent.width
++                            text: parent.video ? [parent.video.channel, parent.video.duration ? KpoppingService._clock(parent.video.duration) : "",
++                                                  parent.video.coming ? "autoplay" : KpoppingService.ytQueued(parent.video.id) ? "up next" : "",
++                                                  KpoppingService.ytInPlaylist(parent.video.id) ? "in My playlist" : ""].filter(t => t).join(" · ") : ""
++                            elide: Text.ElideRight
++                            color: Colors.overSurfaceVariant
++                            font.family: Config.theme.font
++                            font.pixelSize: Math.max(9, Config.theme.fontSize - 2)
++                        }
++                    }
++
++                    // positive.ambxst-kpopping: reorder / remove any video in Up next, queued or autoplay (also Ctrl+↑ / Ctrl+↓, or drag the card)
++                    Row {
++                        anchors.top: parent.top
++                        anchors.right: parent.right
++                        anchors.margins: wallpapersTabRoot.wallpaperMargin + 6
++                        spacing: 2
++                        visible: KpoppingService.active && isSelected && KpoppingService.isQueueViewCard(modelData)
++
++                        ToggleButton {
++                            implicitWidth: 26
++                            implicitHeight: 26
++                            iconSize: 14
++                            radius: Styling.radius(2)
++                            buttonIcon: KpoppingService.ytList ? Icons.caretUp : Icons.caretLeft
++                            tooltipText: "Play earlier (Ctrl+↑)"
++                            onToggle: function () { setSelectedIndex(index + KpoppingService.ytQueueMove(modelData, -1)); }
++                        }
++                        ToggleButton {
++                            implicitWidth: 26
++                            implicitHeight: 26
++                            iconSize: 14
++                            radius: Styling.radius(2)
++                            buttonIcon: KpoppingService.ytList ? Icons.caretDown : Icons.caretRight
++                            tooltipText: "Play later (Ctrl+↓)"
++                            onToggle: function () { setSelectedIndex(index + KpoppingService.ytQueueMove(modelData, 1)); }
++                        }
++                        ToggleButton {
++                            implicitWidth: 26
++                            implicitHeight: 26
++                            iconSize: 14
++                            radius: Styling.radius(2)
++                            buttonIcon: Icons.cancel
++                            tooltipText: "Remove from Up next"
++                            onToggle: function () { KpoppingService.ytQueueRemove(modelData); }
+                         }
+                     }
+ 
+@@ -1455,10 +2264,16 @@ FocusScope {
          Image {
              mipmap: true
              source: {
@@ -424,8 +1122,15 @@ index f914730..61b71b1 100644
                  if (!parent.sourceFile || !GlobalStates.wallpaperManager)
                      return "";
  
+                 // Usar SOLAMENTE thumbnail, nunca el original (muy pesado)
++                const kpLocal = KpoppingService.localThumb(parent.sourceFile); // positive.ambxst-kpopping: bigger cards
++                if (kpLocal)
++                    return kpLocal;
+                 var thumbnailPath = GlobalStates.wallpaperManager.getThumbnailPath(parent.sourceFile);
+                 var version = GlobalStates.wallpaperManager.thumbnailsVersion;
+                 return "file://" + thumbnailPath + "?v=" + version;
 diff --git a/modules/widgets/defaultview/DefaultView.qml b/modules/widgets/defaultview/DefaultView.qml
-index c75a7ad..6e27498 100644
+index c75a7ad..49f8301 100644
 --- a/modules/widgets/defaultview/DefaultView.qml
 +++ b/modules/widgets/defaultview/DefaultView.qml
 @@ -1,4 +1,6 @@
@@ -455,7 +1160,7 @@ index c75a7ad..6e27498 100644
  
      implicitHeight: hasActiveNotifications ? mainRowHeight + notificationContainerHeight : mainRowHeight
  
-@@ -157,6 +164,239 @@ Item {
+@@ -157,6 +164,250 @@ Item {
                  height: 32
                  player: activePlayer
                  notchHovered: expandedState
@@ -547,11 +1252,22 @@ index c75a7ad..6e27498 100644
 +                        font.weight: Font.Bold
 +                        onTextChanged: marqueeX = 0
 +                        onScrollsChanged: marqueeX = 0
++                        // the notch grows / shrinks (hover controls, notifications): start over from the left edge
++                        function restart() {
++                            marqueeX = 0;
++                            if (scrolls)
++                                kpMarquee.restart();
++                        }
++                        Connections {
++                            target: kpTitleBox
++                            function onWidthChanged() { kpTitle.restart(); }
++                        }
 +
 +                        // marquee like Ambxst's wallpaper label: rest, glide to the end, rest, glide back
 +                        // (no snapping), slowly: ~25 px/s, eased at both ends
 +                        readonly property int glide: Math.max(3000, (contentWidth - kpTitleBox.width) * 40)
 +                        SequentialAnimation {
++                            id: kpMarquee
 +                            running: kpTitle.scrolls
 +                            loops: Animation.Infinite
 +                            PauseAnimation { duration: 2000 }

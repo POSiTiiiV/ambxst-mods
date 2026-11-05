@@ -58,7 +58,15 @@ Singleton {
     // Click / Enter (shift = Shift+click / Shift+Enter, ctrl = Ctrl+click / Ctrl+P) on a grid item.
     function activate(src, screenName, shift, ctrl) {
         if (source === "youtube") {
-            if (ytQueueView && (shift || ctrl))
+            const p = bySrc[src];
+            if (ytQueueView && p && p.coming) {   // an autoplay video in Up next
+                if (ctrl)
+                    ytQueueToggle(src, screenName);   // queue it
+                else if (shift)
+                    ytTogglePlaylist(src);
+                else
+                    ytJump(p.listIndex);   // continue the list from it
+            } else if (ytQueueView && (shift || ctrl))
                 ytQueueToggle(src, screenName);   // remove from Up next
             else if (ctrl)
                 ytQueueToggle(src, screenName);
@@ -78,7 +86,8 @@ Singleton {
             return "";
         if (source === "youtube")
             return p.title + (p.channel ? " · " + p.channel : "") + (p.duration ? " · " + _clock(p.duration) : "")
-                + (ytInPlaylist(p.id) ? " · in My playlist" : "") + (ytQueued(p.id) ? " · up next" : "");
+                + (ytInPlaylist(p.id) ? " · in My playlist" : "")
+                + (p.coming ? " · autoplay (click: jump here, Ctrl+click: queue)" : ytQueued(p.id) ? " · up next" : "");
         return p.width + "×" + p.height + " · " + p.likes + (p.likes === 1 ? " like · " : " likes · ") + p.title;
     }
     function _clock(sec) {
@@ -123,7 +132,7 @@ Singleton {
                 .concat(ytResume && !ytPlaying ? [{ label: "⏵ Resume: " + ytResume.item.title, type: "yt:resume" }] : [],
                         ytPlaylist.length ? [{ label: "▶ Play My playlist", type: "yt:playall" }] : [],
                         [{ label: "My playlist (" + ytPlaylist.length + ")", type: "yt:playlist" },
-                         { label: "Up next (" + ytQueue.length + ")", type: "yt:queue" }], ytChips);
+                         { label: "Up next (" + ytQueue.length + (ytComing.length ? " + " + ytComing.length + " autoplay" : "") + ")", type: "yt:queue" }], ytChips);
         let lead = [];
         if (!_query)
             lead = recent.map(q => ({ label: q, type: "recent:" + q }));
@@ -267,7 +276,7 @@ Singleton {
             return;
         }
         if (source === "youtube" && (ytListView || ytQueueView)) {
-            _ytShowList(ytQueueView ? ytQueue : ytPlaylist);
+            _ytShowList(ytQueueView ? ytQueue.concat(ytComing) : ytPlaylist);
             return;
         }
         if (!_query || (_query === shownQuery && _key === _shownKey && pages === _shownPages && !error)) {
@@ -655,6 +664,129 @@ Singleton {
             _ytSetQueue(ytQueue.concat([{ id: p.id, title: p.title, channel: p.channel, duration: p.duration, url: "https://www.youtube.com/watch?v=" + p.id }]));
         }
     }
+    // ── what the list plays after the current video (Autoplay's Mix / playlist), from the feeder ──
+    property var ytComing: []   // [{url, title, channel, coming: true, listIndex}]
+    readonly property string _ytComingFile: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/ambxst-kpopping-coming.json"
+    readonly property string _ytJumpFile: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/ambxst-kpopping-jump.json"
+    FileView {
+        path: root._ytComingFile
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: {
+            try {
+                const list = (JSON.parse(text()) || []).map(e => Object.assign({}, e, { coming: true, listIndex: e.i }));
+                if (JSON.stringify(list) !== JSON.stringify(root.ytComing)) {
+                    root.ytComing = list;
+                    if (root.ytQueueView) {
+                        root._shownKey = "";
+                        root._run();
+                    }
+                }
+            } catch (e) {}
+        }
+    }
+    // An autoplay video picked in Up next: the feeder continues the list from it.
+    function ytJump(listIndex) {
+        if (!ytPlaying || listIndex === undefined)
+            return;
+        Quickshell.execDetached(["sh", "-c", 'printf \'{"i": %s}\' "$1" > "$2" && pkill -USR1 -f "^python3 .*kpopping_bridge.py yt-player"',
+                                 "sh", String(listIndex), _ytJumpFile]);
+    }
+    // Up next is one list to reorder: queued videos (always first), then the autoplay ones.
+    // Moves a card earlier (-1) / later (+1); returns how far the card moved in the grid (0, ±1).
+    function ytQueueMove(src, delta) {
+        const p = bySrc[src];
+        if (!p)
+            return 0;
+        if (p.coming) {
+            const at = ytComing.findIndex(e => e.listIndex === p.listIndex);
+            if (delta < 0 && at === 0) {   // the first autoplay video, moved up: into the queue
+                _ytSetQueue(ytQueue.concat([{ id: p.id, title: p.title, channel: p.channel, duration: p.duration, url: "https://www.youtube.com/watch?v=" + p.id }]));
+                _ytListCommand({ remove: p.listIndex });   // so it doesn't play twice
+                return 0;
+            }
+            if (delta > 0 && at === ytComing.length - 1)
+                return 0;
+            _ytListCommand({ move: p.listIndex, delta: delta });
+            return delta;
+        }
+        const from = ytQueue.findIndex(e => e.id === p.id), to = from + delta;
+        if (from < 0 || to < 0 || to >= ytQueue.length)
+            return 0;   // queued videos stay ahead of the autoplay ones
+        const list = ytQueue.slice();
+        list.splice(to, 0, list.splice(from, 1)[0]);
+        _ytSetQueue(list);
+        return delta;
+    }
+    // Drag and drop in Up next: move a card by `delta` places in the combined list (queued, then
+    // autoplay). Queued videos stay ahead of the autoplay ones; an autoplay video dropped among the
+    // queued ones becomes a queued video there. Returns how far it actually moved.
+    function ytQueueMoveBy(src, delta) {
+        const p = bySrc[src];
+        if (!p || !delta)
+            return 0;
+        if (!p.coming) {
+            const from = ytQueue.findIndex(e => e.id === p.id);
+            const to = Math.max(0, Math.min(ytQueue.length - 1, from + delta));
+            if (from < 0 || to === from)
+                return 0;
+            const list = ytQueue.slice();
+            list.splice(to, 0, list.splice(from, 1)[0]);
+            _ytSetQueue(list);
+            return to - from;
+        }
+        const at = ytComing.findIndex(e => e.listIndex === p.listIndex);
+        if (at < 0)
+            return 0;
+        if (at + delta < 0) {   // into the queued part
+            const queued = ytQueue.length, from = queued + at;   // its place in the combined list
+            const to = Math.max(0, from + delta);
+            const list = ytQueue.slice();
+            list.splice(to, 0, { id: p.id, title: p.title, channel: p.channel, duration: p.duration, url: "https://www.youtube.com/watch?v=" + p.id });
+            _ytSetQueue(list);
+            _ytListCommand({ remove: p.listIndex });   // so it doesn't play twice
+            return to - from;
+        }
+        const target = Math.min(ytComing.length - 1, at + delta);
+        const steps = target - at, dir = steps > 0 ? 1 : -1;
+        // the feeder swaps with the neighbour in play order: n swaps carry it n places (follows the card's list index)
+        let li = p.listIndex;
+        const commands = [];
+        for (let k = 0; k < Math.abs(steps); k++) {
+            const next = ytComing[at + (k + 1) * dir];
+            commands.push({ move: li, delta: dir });
+            li = next ? next.listIndex : li;
+        }
+        _ytListCommand(commands);   // one write, so the swaps reach the feeder in order
+        return steps;
+    }
+
+    function ytQueueRemove(src) {
+        const p = bySrc[src];
+        if (!p)
+            return;
+        if (p.coming)
+            _ytListCommand({ remove: p.listIndex });
+        else
+            _ytSetQueue(ytQueue.filter(e => e.id !== p.id));
+    }
+    // edits to the feeder's list (Autoplay's Mix / playlist), applied within half a second
+    readonly property string _ytCommandsFile: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/ambxst-kpopping-commands.jsonl"
+    function _ytListCommand(command) {   // one command, or a list written in one go (kept in order)
+        if (!ytPlaying)
+            return;
+        const lines = (Array.isArray(command) ? command : [command]).map(c => JSON.stringify(c));
+        if (lines.length)
+            Quickshell.execDetached(["sh", "-c", 'f="$1"; shift; printf "%s\\n" "$@" >> "$f"', "sh", _ytCommandsFile].concat(lines));
+    }
+    function isDimmed(src) {   // autoplay cards in Up next
+        return source === "youtube" && !!(bySrc[src] && bySrc[src].coming);
+    }
+    function isQueueViewCard(src) {
+        return source === "youtube" && ytQueueView && !!bySrc[src];
+    }
+
     function _ytSetQueue(list) {
         ytQueue = list;
         upnextFile.setText(JSON.stringify(list));
@@ -692,8 +824,13 @@ Singleton {
     }
 
     function _ytShowList(entries) {
-        const list = entries.map(e => ({ src: "https://www.youtube.com/watch?v=" + e.id, id: e.id, title: e.title, channel: e.channel,
-                                             duration: e.duration, thumb: "https://i.ytimg.com/vi/" + e.id + "/mqdefault.jpg" }));
+        const list = entries.map(e => {
+            const id = e.id || ((e.url || "").match(/v=([\w-]{11})/) || [])[1] || "";
+            // autoplay entries get their own src, so a video both queued and coming up stays two cards
+            return { src: "https://www.youtube.com/watch?v=" + id + (e.coming ? "#autoplay" + e.listIndex : ""), id: id,
+                     title: e.title, channel: e.channel, duration: e.duration, coming: !!e.coming, listIndex: e.listIndex,
+                     thumb: "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg" };
+        });
         const t = {};
         for (const p of list)
             t[p.src] = p.thumb;
@@ -742,7 +879,8 @@ Singleton {
                       "input-ipc-server=" + _ytSocket, "ytdl=no", "idle=yes",
                       "mute=" + (ytMuted ? "yes" : "no"), "volume=" + Math.round(Math.max(0, Math.min(1, ytVolume)) * 100)].join(" ");
         const job = JSON.stringify(Object.assign({ fifo: _ytFifo, format: fmt, options: _ytOptionsFile, upnext: _ytUpnextFile,
-                                                   state: _ytStateFile, output: screenName || "", start: start, mix: mix, queue: queue,
+                                                   state: _ytStateFile, coming: _ytComingFile, jump: _ytJumpFile, commands: _ytCommandsFile,
+                                                   output: screenName || "", start: start, mix: mix, queue: queue,
                                                    mpv_opts: opts, cache_gb: parseFloat(ytCache) || 2 }, extra || {}));
         _ytOutput = screenName || "ALL";
         _ytStopping = false;
@@ -788,7 +926,10 @@ Singleton {
     Timer {
         id: ytStopCleanup
         interval: 1500   // whatever didn't close by itself (an older or stuck feeder)
-        onTriggered: Quickshell.execDetached(["sh", "-c", root._ytKill + 'rm -f "$1"', "sh", root._ytFifo])
+        onTriggered: {
+            Quickshell.execDetached(["sh", "-c", root._ytKill + 'rm -f "$1"', "sh", root._ytFifo]);
+            ytStateFile.reload();   // the hide's saved state, even if the watcher never connected
+        }
     }
 
     property var ytResume: null   // {queue, i, from_list, item, seek, output}
@@ -799,7 +940,7 @@ Singleton {
         if (!st || !st.queue)
             return;
         _ytLaunch(st.queue, st.i || 0, false, st.output || "", st.item.title,
-                  { first_item: st.from_list ? null : st.item, from_list: !!st.from_list, seek: st.seek || 0 });
+                  { first_item: st.from_list ? null : st.item, from_list: !!st.from_list, seek: st.seek || 0, topup: !!st.topup });
     }
 
     FileView {
@@ -965,6 +1106,107 @@ Singleton {
         }
     }
 
+    // ── wallpaper grid layout (mod settings "gridLayout" / "ytLayout" / "cardSize") ───
+    property string gridLayout: "classic"   // pictures: classic (Ambxst's squares) | fit (rows) | masonry (Pinterest)
+    property string ytLayout: "squares"     // YouTube: squares | tiles (16:9 grid) | list (like YouTube search)
+    property string cardSize: "compact"     // compact (Ambxst's 7 a row) | comfortable | large
+    property string ytCardSize: "same"      // YouTube's own: same (as cardSize) | compact | comfortable | large
+    readonly property string _ytSize: ytCardSize === "same" ? cardSize : ytCardSize
+    readonly property bool _yt: active && source === "youtube"
+    readonly property bool ytTiles: _yt && ytLayout === "tiles"
+    readonly property bool ytList: _yt && ytLayout === "list"
+    readonly property bool collage: gridLayout === "fit" && !_yt        // justified rows
+    readonly property bool masonry: gridLayout === "masonry" && !_yt    // Pinterest-style columns
+    readonly property int gridColumns: ytList ? ({ compact: 3, comfortable: 2, large: 1 })[_ytSize] || 3
+        : ytTiles ? ({ compact: 5, comfortable: 4, large: 3 })[_ytSize] || 5
+        : ({ compact: 7, comfortable: 5, large: 4 })[_yt ? _ytSize : cardSize] || 7
+    // height of a YouTube list row's thumbnail (16:9)
+    readonly property int ytListThumbHeight: ({ compact: 72, comfortable: 96, large: 132 })[_ytSize] || 72
+    // Ambxst's own thumbnails are 140 px squares: fine for compact squares, too small or the wrong
+    // shape otherwise, so the mod makes 480 px shape-keeping ones for the local library
+    readonly property bool wantLocalThumbs: collage || masonry || cardSize !== "compact"
+
+    // Width / height of a grid item, for the collage (kpopping photos know theirs; local wallpapers
+    // once their thumbnails exist; anything else 16:9).
+    function aspect(src) {
+        const p = active ? bySrc[src] : null;
+        if (p && p.width && p.height)
+            return p.width / p.height;
+        const t = localThumbs[src];
+        return t && t.w && t.h ? t.w / t.h : 16 / 9;
+    }
+    function localThumb(path) {
+        const t = wantLocalThumbs ? localThumbs[path] : null;
+        return t ? t.thumb : "";
+    }
+
+    property var localThumbs: ({})   // path -> {w, h, thumb}
+    property string localThumbsProgress: ""   // "1200/5857" while thumbnails are being made
+    property var _ltPending: ({})
+    readonly property string _ltList: cacheDir + "local-thumbs.txt"
+    function _localThumbsRun() {
+        const wm = GlobalStates.wallpaperManager;
+        if (!wantLocalThumbs || !wm || !wm.wallpaperPaths.length)
+            return;
+        if (localThumbsProc.running) {
+            _ltAgain = true;
+            return;
+        }
+        localThumbsProc.command = ["sh", "-c", 'f="$1"; b="$2"; shift 2; mkdir -p "$(dirname "$f")"; printf "%s\\n" "$@" > "$f"; exec python3 "$b" local-thumbs "$f"',
+                                   "sh", _ltList, bridge].concat(wm.wallpaperPaths);
+        localThumbsProc.running = true;
+    }
+    property bool _ltAgain: false
+    onWantLocalThumbsChanged: _localThumbsRun()
+    Connections {
+        target: GlobalStates.wallpaperManager
+        function onWallpaperPathsChanged() {
+            ltDebounce.restart();
+        }
+    }
+    Timer {
+        id: ltDebounce
+        interval: 3000   // the scan updates the list in bursts
+        onTriggered: root._localThumbsRun()
+    }
+    Process {
+        id: localThumbsProc
+        stdout: SplitParser {
+            onRead: line => {
+                let d;
+                try {
+                    d = JSON.parse(line);
+                } catch (e) {
+                    return;
+                }
+                if (d.path !== undefined) {
+                    root._ltPending[d.path] = { w: d.w, h: d.h, thumb: d.thumb };
+                } else if (d.progress !== undefined) {
+                    root.localThumbsProgress = d.progress < d.total ? d.progress + "/" + d.total : "";
+                    root._ltFlush();
+                } else if (d.done) {
+                    root.localThumbsProgress = "";
+                    root._ltFlush();
+                }
+            }
+        }
+        onExited: {
+            root._ltFlush();
+            if (root._ltAgain) {
+                root._ltAgain = false;
+                root._localThumbsRun();
+            }
+        }
+    }
+    // hand thumbnails to the grid in batches, not one binding storm per file
+    function _ltFlush() {
+        const keys = Object.keys(_ltPending);
+        if (!keys.length)
+            return;
+        localThumbs = Object.assign({}, localThumbs, _ltPending);
+        _ltPending = {};
+    }
+
     // ── fit (mod settings, applied before every skwd-wall apply) ────────
     property string fitMode: "auto"        // auto | fill | fit | stretch | center | tile | skwd
     property string fitBackground: "blur"  // blur | color
@@ -977,7 +1219,7 @@ Singleton {
     }
 
     function _setting(key, value) {
-        if (key === "fitMode" || key === "fitBackground" || key === "ytQuality" || key === "ytCache")
+        if (key === "fitMode" || key === "fitBackground" || key === "ytQuality" || key === "ytCache" || key === "gridLayout" || key === "cardSize" || key === "ytLayout" || key === "ytCardSize")
             root[key] = String(value);
         else if (key === "ytPause")
             root.ytPause = value === true || value === "true";
@@ -990,6 +1232,7 @@ Singleton {
                 _setting(key, values[key]);
         });
         ytWatch.running = true;   // pick up a YouTube wallpaper still playing from before a reload
+        ltDebounce.restart();     // thumbnails for big cards / the collage, if those are on
     }
 
     Connections {

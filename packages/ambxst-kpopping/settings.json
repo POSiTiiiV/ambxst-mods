@@ -3,6 +3,94 @@
   "version": 1,
   "fields": [
     {
+      "key": "gridLayout",
+      "label": "Picture layout",
+      "description": "How your wallpapers and kpopping photos are laid out. Classic: Ambxst's square cards. Rows: equal-height rows, every picture in its own shape. Masonry: Pinterest-style columns, every picture in its own shape.",
+      "type": "enum",
+      "default": "classic",
+      "options": [
+        {
+          "label": "Classic squares (Ambxst)",
+          "value": "classic"
+        },
+        {
+          "label": "Rows",
+          "value": "fit"
+        },
+        {
+          "label": "Masonry (Pinterest)",
+          "value": "masonry"
+        }
+      ]
+    },
+    {
+      "key": "ytLayout",
+      "label": "YouTube layout",
+      "description": "Squares: like the other grids. Tiles: 16:9 thumbnails with title, channel and length underneath. List: like YouTube's search results, thumbnail on the left, details on the right.",
+      "type": "enum",
+      "default": "squares",
+      "options": [
+        {
+          "label": "Squares",
+          "value": "squares"
+        },
+        {
+          "label": "Tiles (16:9)",
+          "value": "tiles"
+        },
+        {
+          "label": "List (like YouTube search)",
+          "value": "list"
+        }
+      ]
+    },
+    {
+      "key": "cardSize",
+      "label": "Wallpaper card size",
+      "description": "Compact is Ambxst's 7 cards a row (YouTube list: 3 columns of rows; Comfortable 2, Large 1). Bigger cards and the Rows / Masonry layouts use 480 px thumbnails the mod makes for your library once (about 5 minutes for ~6,000 wallpapers, ~25 KB each, in ~/.cache/ambxst/kpopping/local-thumbs).",
+      "type": "enum",
+      "default": "compact",
+      "options": [
+        {
+          "label": "Compact",
+          "value": "compact"
+        },
+        {
+          "label": "Comfortable",
+          "value": "comfortable"
+        },
+        {
+          "label": "Large",
+          "value": "large"
+        }
+      ]
+    },
+    {
+      "key": "ytCardSize",
+      "label": "YouTube card size",
+      "description": "Card size for YouTube results only (squares, tiles or list). Same as pictures follows Wallpaper card size.",
+      "type": "enum",
+      "default": "same",
+      "options": [
+        {
+          "label": "Same as pictures",
+          "value": "same"
+        },
+        {
+          "label": "Compact",
+          "value": "compact"
+        },
+        {
+          "label": "Comfortable",
+          "value": "comfortable"
+        },
+        {
+          "label": "Large",
+          "value": "large"
+        }
+      ]
+    },
+    {
       "key": "fitMode",
       "label": "Wallpaper fit",
       "description": "How skwd-wall puts every wallpaper on the screen (applies to all wallpapers, not only kpopping ones). Auto fills the screen with landscape images and shows portrait or square ones whole.",

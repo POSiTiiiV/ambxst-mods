@@ -43,7 +43,7 @@ Press **▶** at the end of the top row, then search, or paste a YouTube video o
 | **⏵ Resume: …** chip | After **stop** (or choosing another wallpaper): continues the same video, a couple of seconds before where it stopped, with the same list and Up next. Survives `ambxst reload`; a new session (log out / reboot) forgets it. |
 | **▶ Play My playlist** chip | Plays your playlist, and only it, from the top (Shuffle: from a random video). |
 | **My playlist (N)** chip | Shows your playlist in the grid. Click a video to play the playlist from there. Typing a search goes back to results. Saved in `~/.config/ambxst/kpopping-youtube.json`. |
-| **Up next (N)** chip | Shows the queue. Click one to play it now; Shift+ or Ctrl+click removes it. The queue empties as videos play. |
+| **Up next (N + M autoplay)** chip | Your queue first, then (dimmed) the next videos the list will play: Autoplay's Mix or the playlist. With Shuffle, only the next pick; with Loop video, none. Reorder the whole thing by **dragging a card** to its new place (any YouTube layout; hold it near the top or bottom edge to scroll), with **◀ ▶** on the selected card (**▲ ▼** in list view), or Ctrl+↑ / Ctrl+↓; remove with **✕**. Queued videos always stay ahead of the autoplay ones; moving the first autoplay video up queues it. With Shuffle, autoplay videos can only be removed. **Click:** a queued video plays now; an autoplay video jumps there (the list carries on after it). Ctrl+click an autoplay video to queue it, Shift+click for My playlist. |
 | **Loop video** | Repeats the current video instead of moving on. Also applies to the video that's playing. |
 | **Shuffle** | Shuffles the playlist. Also applies to the one that's playing. |
 | **Autoplay** (on by default) | After a search result, keeps going with YouTube's Mix of related videos, like YouTube's own autoplay. Off: that one video loops. |
@@ -68,7 +68,7 @@ hl.bind("SUPER + CTRL + Right", hl.dsp.exec_cmd("playerctl -p ambxst_kpopping po
 3. Otherwise the list goes on:
    - **My playlist** (▶ Play My playlist, or a click in its view): the next video in it.
    - **A pasted playlist link:** its next video.
-   - **A search result:** with **Autoplay** on, YouTube's Mix of related videos (like YouTube's own autoplay); off, it repeats.
+   - **A search result:** with **Autoplay** on, YouTube's Mix of related videos (like YouTube's own autoplay). It keeps going: near the end of the list, more recommendations for the video playing then are added (no repeats). Off, it repeats.
 
 Lists loop when they reach the end.
 - Videos are downloaded with yt-dlp into **`~/.cache/ambxst/kpopping/yt/`** and played from there by mpvpaper, on the layer just above skwd-wall. YouTube refuses mpv's own stream fetches (HTTP 403). A new video takes ~5–15 s to start (the notch says *Loading…*). While one plays, the next ones (Up next, then the list, including Autoplay's Mix) download ahead, and recently played ones stay cached, so skipping, going back, resuming and seeking are instant and exact.
@@ -117,6 +117,17 @@ kpopping's API takes 0.5–3 s per request, and a search needs about 30 of them.
 | Album sizes | per post, until the album gets new photos |
 | Thumbnails (~15 KB each, via kpopping's own resizer; full-size originals it hands back for older photos are shrunk with ffmpeg) | until unused for 30 days |
 | Full-size previews | 7 days, never while still your wallpaper; saving a previewed photo just copies it |
+
+## Grid layout and card size (Settings → Mods → Kpopping Online Wallpapers)
+
+| Setting | |
+|---|---|
+| **Picture layout** (your wallpapers, kpopping) | **Classic squares** (Ambxst's own, the default) · **Rows**: equal-height rows, every picture in its own shape · **Masonry**: Pinterest-style columns, every picture in its own shape |
+| **YouTube layout** | **Squares** (default) · **Tiles**: 16:9 thumbnails, title / channel / length underneath · **List**: like YouTube's search results, thumbnail left, details right |
+| **Wallpaper card size** | **Compact** (Ambxst's 7 a row) · **Comfortable** · **Large**. The YouTube list: 3 / 2 / 1 columns of rows, bigger thumbnails. |
+| **YouTube card size** | **Same as pictures** (default), or its own Compact / Comfortable / Large. |
+
+Classic + Squares + Compact is exactly Ambxst's grid. For bigger cards and the collage, the mod makes 480 px thumbnails of your library that keep each picture's shape, once, in the background ("Making thumbnails…"; ~5 min for ~6,000 wallpapers, ~25 KB each, in `~/.cache/ambxst/kpopping/local-thumbs`; with Pillow installed, otherwise ffmpeg, which is slower). Arrow keys: in Rows, ↑/↓ go to the nearest card in the next row; in Masonry, ↑/↓ stay in the column and ←/→ go to the card at the same height next door.
 
 ## Wallpaper fit (Settings → Mods → Kpopping Online Wallpapers)
 
