@@ -475,7 +475,10 @@ Singleton {
         if (empty > 0 && empty !== here) {
             _returnWorkspace = here;
             _previewWorkspace = empty;
-            AxctlService.dispatch("workspace " + empty);
+            // after the dashboard has closed: closing it refocuses your last window, which pulled
+            // you straight back from the empty workspace (seen 56 ms after the switch)
+            _wsTries = 0;
+            wsSwitch.restart();
         } else if (here !== _previewWorkspace) {
             _returnWorkspace = -1;   // already on an empty workspace of your own: stay there after
             _previewWorkspace = -1;
@@ -516,9 +519,28 @@ Singleton {
     function _goBack() {
         // only if you're still on the preview workspace
         if (_previewWorkspace > 0 && _returnWorkspace > 0 && _workspace() === _previewWorkspace)
-            AxctlService.dispatch("workspace " + _returnWorkspace);
+            _focusWorkspace(_returnWorkspace);
         _previewWorkspace = -1;
         _returnWorkspace = -1;
+    }
+
+    // Hyprland with a Lua config (0.56+) rejects "dispatch workspace N", which axctl still sends (it
+    // reports success, nothing moves): use hl.dsp.focus there, axctl everywhere else.
+    property int _wsTries: 0
+    Timer {
+        id: wsSwitch
+        interval: 250
+        onTriggered: {
+            // switch, then check again: up to 3 tries while something keeps taking you back
+            if (root._previewWorkspace <= 0 || root._workspace() === root._previewWorkspace || root._wsTries >= 3)
+                return;
+            root._wsTries++;
+            root._focusWorkspace(root._previewWorkspace);
+            restart();
+        }
+    }
+    function _focusWorkspace(n) {
+        Quickshell.execDetached(["sh", "-c", 'hyprctl dispatch "hl.dsp.focus({ workspace = $1 })" 2>/dev/null | grep -qx ok || axctl workspace switch "$1"', "sh", String(n)]);
     }
 
     function _workspace() {
