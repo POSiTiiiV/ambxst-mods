@@ -18,10 +18,23 @@ index 02ff394..527f076 100644
          if (!src)
              return output ? [root.helm, "apply", file, "-o", output] : [root.helm, "apply", file];
 diff --git a/modules/widgets/dashboard/wallpapers/FilterBar.qml b/modules/widgets/dashboard/wallpapers/FilterBar.qml
-index b60e100..2846625 100644
+index b60e100..991dc32 100644
 --- a/modules/widgets/dashboard/wallpapers/FilterBar.qml
 +++ b/modules/widgets/dashboard/wallpapers/FilterBar.qml
-@@ -176,6 +176,19 @@ FocusScope {
+@@ -92,6 +92,12 @@ FocusScope {
+         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+             if (focusedFilterIndex >= 0 && focusedFilterIndex < filterModel.count) {
+                 const filterType = filterModel.get(focusedFilterIndex).type;
++                // positive.ambxst-kpopping: dividers do nothing, the open tab stays open
++                const kind = KpoppingService.active ? KpoppingService.chipKind(filterType) : "chip";
++                if (kind === "sep" || kind === "tab" && KpoppingService.chipActive(filterType)) {
++                    event.accepted = true;
++                    return;
++                }
+                 const index = root.activeFilters.indexOf(filterType);
+                 if (index > -1) {
+                     root.activeFilters.splice(index, 1);
+@@ -176,6 +182,19 @@ FocusScope {
          // Función para actualizar filtros dinámicamente
          function updateFilters() {
              console.log("Updating filters in FilterBar");
@@ -41,7 +54,7 @@ index b60e100..2846625 100644
              // Limpiar filtros de subcarpetas existentes
              for (var i = filterModel.count - 1; i >= 3; i--) {
                  filterModel.remove(i);
-@@ -207,6 +220,17 @@ FocusScope {
+@@ -207,6 +226,17 @@ FocusScope {
              flickable.updateFilters();
          }
  
@@ -59,6 +72,97 @@ index b60e100..2846625 100644
          // Actualizar filtros cuando cambie el directorio de wallpapers
          Connections {
              target: GlobalStates.wallpaperManager
+@@ -228,7 +258,10 @@ FocusScope {
+                     required property string type
+                     required property int index
+ 
+-                    property bool isActive: root.activeFilters.includes(type)
++                    property bool isActive: KpoppingService.active ? root.activeFilters.length >= 0 && KpoppingService.chipActive(type) : root.activeFilters.includes(type)
++                    // positive.ambxst-kpopping: "tab" (no check mark), "icon" (icon only + tooltip), "sep" (a thin divider), "chip"
++                    readonly property string kpKind: KpoppingService.active ? KpoppingService.chipKind(type) : "chip"
++                    readonly property bool showCheck: isActive && kpKind === "chip"
+                     property bool hasFocus: root.keyboardNavigationActive && root.focusedFilterIndex === index
+                     property bool isHovered: false
+ 
+@@ -244,17 +277,20 @@ FocusScope {
+                     }
+ 
+                     // Ancho dinámico: incluye icono solo cuando está activo
+-                    width: filterText.width + 24 + (isActive ? filterIcon.width + 4 : 0)
+-                    height: 32
+-                    radius: isActive ? Styling.radius(0) / 2 : Styling.radius(0)
++                    width: kpKind === "sep" ? 2 : kpKind === "icon" ? 36 : filterText.width + 24 + (showCheck ? filterIcon.width + 4 : 0)
++                    height: kpKind === "sep" ? 18 : 32
++                    y: kpKind === "sep" ? 7 : 0
++                    opacity: kpKind === "sep" ? 0.6 : 1
++                    radius: kpKind === "sep" ? 1 : isActive ? Styling.radius(0) / 2 : Styling.radius(0)
+ 
+                     Item {
+                         anchors.fill: parent
+                         anchors.margins: 8
++                        visible: filterTag.kpKind !== "sep"
+ 
+                         Row {
+                             anchors.centerIn: parent
+-                            spacing: isActive ? 4 : 0
++                            spacing: filterTag.showCheck ? 4 : 0
+ 
+                             // Icono con animación de revelación
+                             Item {
+@@ -268,8 +304,8 @@ FocusScope {
+                                     font.family: Icons.font
+                                     font.pixelSize: 16
+                                     color: filterTag.item
+-                                    visible: isActive
+-                                    opacity: isActive ? 1 : 0
++                                    visible: filterTag.showCheck
++                                    opacity: filterTag.showCheck ? 1 : 0
+ 
+                                     Behavior on opacity {
+                                         enabled: Config.animDuration > 0
+@@ -291,9 +327,9 @@ FocusScope {
+ 
+                             Text {
+                                 id: filterText
+-                                text: type === "image" ? I18n.t("wallpapers.filter_images") : type === "video" ? I18n.t("wallpapers.filter_videos") : label
+-                                font.family: Config.theme.font
+-                                font.pixelSize: Config.theme.fontSize
++                                text: filterTag.kpKind === "icon" ? Icons[KpoppingService.ytChipIcons[type]] : type === "image" ? I18n.t("wallpapers.filter_images") : type === "video" ? I18n.t("wallpapers.filter_videos") : label
++                                font.family: filterTag.kpKind === "icon" ? Icons.font : Config.theme.font
++                                font.pixelSize: filterTag.kpKind === "icon" ? 16 : Config.theme.fontSize
+                                 color: filterTag.item
+ 
+                                 Behavior on color {
+@@ -310,6 +346,7 @@ FocusScope {
+                     MouseArea {
+                         anchors.fill: parent
+                         hoverEnabled: true
++                        enabled: filterTag.kpKind !== "sep"
+                         cursorShape: Qt.PointingHandCursor
+ 
+                         onEntered: filterTag.isHovered = true
+@@ -318,6 +355,8 @@ FocusScope {
+                         onClicked: {
+                             root.keyboardNavigationActive = false;
+                             root.focusedFilterIndex = -1;
++                            if (filterTag.kpKind === "tab" && filterTag.isActive)
++                                return; // positive.ambxst-kpopping: the open tab stays open
+ 
+                             const index = root.activeFilters.indexOf(type);
+                             if (index > -1) {
+@@ -337,6 +376,12 @@ FocusScope {
+                             easing.type: Easing.OutCubic
+                         }
+                     }
++
++                    // positive.ambxst-kpopping: icon chips say what they are
++                    StyledToolTip {
++                        visible: filterTag.isHovered && filterTag.kpKind === "icon"
++                        tooltipText: filterTag.label + (filterTag.isActive ? ": on" : ": off")
++                    }
+                 }
+             }
+         }
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 index f914730..a1e3051 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml

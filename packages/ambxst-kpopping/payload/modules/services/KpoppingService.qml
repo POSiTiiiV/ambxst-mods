@@ -120,20 +120,34 @@ Singleton {
         { label: "4K", type: "4k" },
         { label: "8K", type: "8k" }
     ]
+    // how the FilterBar draws a chip: a tab (one is always picked), an icon toggle, a divider, or a plain chip
+    readonly property var ytChipIcons: ({ "yt:loop": "repeatOnce", "yt:shuffle": "shuffle", "yt:autoplay": "next" })
+    function chipKind(type) {
+        return type.startsWith("yt:sep") ? "sep" : ["yt:search", "yt:playlist", "yt:queue"].includes(type) ? "tab" : ytChipIcons[type] ? "icon" : "chip";
+    }
+    function chipActive(type) {
+        return type === "yt:search" ? !ytListView && !ytQueueView : filters.includes(type);
+    }
     readonly property var ytChips: [
         { label: "Loop video", type: "yt:loop" },
         { label: "Shuffle", type: "yt:shuffle" },
         { label: "Autoplay", type: "yt:autoplay" }
     ]
+    // YouTube row: [⏵ Resume] | Search · My playlist · Up next (tabs) | what this tab can do | Loop Shuffle Autoplay (icons)
     // Empty box: recent searches. Ambiguous name: every match, best first, the shown one active.
     readonly property var filterChips: {
-        if (source === "youtube")
-            return (!_query && !ytListView && !ytQueueView ? recent.map(q => ({ label: q, type: "recent:" + q })) : [])
-                .concat(ytResume && !ytPlaying ? [{ label: "⏵ Resume: " + ytResume.item.title, type: "yt:resume" }] : [],
-                        ytPlaylist.length ? [{ label: "▶ Play My playlist", type: "yt:playall" }] : [],
-                        ytQueueView && ytPlaying ? [{ label: "↻ New Mix from this video", type: "yt:remix" }] : [],
-                        [{ label: "My playlist (" + ytPlaylist.length + ")", type: "yt:playlist" },
-                         { label: "Up next (" + ytQueue.length + (ytComing.length ? " + " + ytComing.length + " autoplay" : "") + ")", type: "yt:queue" }], ytChips);
+        if (source === "youtube") {
+            const sep = n => ({ label: "", type: "yt:sep" + n });
+            const upNext = ytQueue.length + ytComing.length;
+            const here = ytQueueView ? (ytPlaying ? [{ label: "↻ New Mix from this video", type: "yt:remix" }] : [])
+                : ytListView ? (ytPlaylist.length ? [{ label: "▶ Play My playlist", type: "yt:playall" }] : [])
+                : (!_query ? recent.slice(0, 5).map(q => ({ label: q, type: "recent:" + q })) : []);
+            return (ytResume && !ytPlaying ? [{ label: "⏵ Resume: " + ytResume.item.title, type: "yt:resume" }, sep(0)] : [])
+                .concat([{ label: "Search", type: "yt:search" },
+                         { label: "My playlist" + (ytPlaylist.length ? " · " + ytPlaylist.length : ""), type: "yt:playlist" },
+                         { label: "Up next" + (upNext ? " · " + upNext : ""), type: "yt:queue" }],
+                        here.length ? [sep(1)].concat(here) : [], [sep(2)], ytChips);
+        }
         let lead = [];
         if (!_query)
             lead = recent.map(q => ({ label: q, type: "recent:" + q }));
@@ -174,6 +188,11 @@ Singleton {
         if (filters.includes("yt:remix")) {
             filters = filters.filter(f => f !== "yt:remix");
             ytRemix();
+            return;
+        }
+        // the Search tab: leave My playlist / Up next
+        if (filters.includes("yt:search") || filters.some(f => f.startsWith("yt:sep"))) {
+            filters = filters.filter(f => f !== "yt:search" && !f.startsWith("yt:sep") && (!filters.includes("yt:search") || f !== "yt:playlist" && f !== "yt:queue"));
             return;
         }
         // My playlist / Up next: one view at a time, the newest wins
