@@ -93,12 +93,12 @@
     {
       "key": "fitMode",
       "label": "Wallpaper fit",
-      "description": "How skwd-wall puts every wallpaper on the screen (applies to all wallpapers, not only kpopping ones). Auto fills the screen with landscape images and shows portrait or square ones whole.",
+      "description": "How skwd-wall puts every wallpaper on the screen (applies to all wallpapers, not only kpopping ones). Auto fills the screen unless that would cut off more than 20% of the image (your screen's shape decides), else shows it whole. A fit you pick for one wallpaper (Super+Alt+F, or the fit button in the notch while previewing) is remembered and wins over this.",
       "type": "enum",
       "default": "auto",
       "options": [
         {
-          "label": "Auto (portrait shown whole)",
+          "label": "Auto (fill unless it crops over 20%)",
           "value": "auto"
         },
         {

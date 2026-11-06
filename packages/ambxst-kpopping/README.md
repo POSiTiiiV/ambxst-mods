@@ -22,12 +22,18 @@ Needs `python3` (standard library only), `curl` and `sh`. Nothing to configure, 
 | | |
 |---|---|
 | **Globe button** (end of the top row) | Switches the grid between your local library and kpopping.com. The **▶** next to it does the same for YouTube. |
-| **Search box** | Finds an idol or group: `Karina`, `aespa`, `Chaewon`, `ITZY`, ... The best match is picked (a group with exactly that name, else the most popular idol whose name contains it). The last search, its results and the filters stay until the shell restarts. |
-| **Chips under the box** | **Empty box:** your recent searches, one click to search again. **Several matches** (nine idols are called Chaewon): one chip per match, like `Kim Chaewon · IZ*ONE` / `ChaeWon · tripleS`. Click one to switch. **Order:** Hot (default) / Newest / Most liked (all time). These are the only orders kpopping's API has; it has no view counts. **Filters:** Landscape / Portrait / Square, SD / HD / FHD / 2K / 4K / 8K, and for idols **+ Tagged**. |
+| **Search box** | Finds an idol or group: `Karina`, `aespa`, `Chaewon`, `ITZY`, ... The best match is picked (a group with exactly that name, else the most popular idol whose name contains it). The last search, its results and the filters stay until the shell restarts. **Links work too:** paste an idol or group page (`https://kpopping.com/profiles/idol/Ryujin`, `…/profiles/group/ITZY`) to go straight to them, or a post (`https://kpopping.com/kpics/…`) to see only that post's photos. |
+| **Chips under the box** | **Empty box:** your recent searches, one click to search again. **Several matches** (nine idols are called Chaewon): one chip per match, like `Kim Chaewon · IZ*ONE` / `ChaeWon · tripleS`. Click one to switch. **Order:** Hot (default) / Newest / Most liked (all time). These are the only orders kpopping's API has; it has no view counts. **Date:** Past week / Past month / Past year (by the photo's date, else its upload date). **Category:** SNS / Official / Photoshoot / Fan photos / Teasers. **Filters:** **Fills my screen** (on by default: photos that fill your screen with at most 20% cut off and need at most 10% upscaling), Landscape / Portrait / Square, SD / HD / FHD / 2K / 4K / 8K, and for idols **+ Tagged**. |
 | **Scrolling** | The next 30 posts load as you reach the bottom, so you can go through every post an idol has (Karina has ~1,200). A strict filter loads a few more pages on its own. |
 | **Click / Enter** | **Preview**: the dashboard closes, you're moved to an empty workspace and the photo becomes your wallpaper (colours and transition included). The notch shows `Preview · 2592×1944` with **✓** (save it) and **✗** (back to your wallpaper, your workspace and the picker). Ctrl+R in the picker also drops it. |
 | **Shift+click / Shift+Enter** | Saves and sets the photo straight away. |
-| **Label** under the highlighted photo | `width×height · 26 likes · title`, so low-resolution shots are easy to spot. |
+| **Label** under the highlighted photo | `width×height · 26 likes · title (8 photos)`, so low-resolution shots are easy to spot. |
+| **⊞ on the highlighted photo** | Shows the whole post it came from, and only that. In a post, the chips are the idols and groups tagged in it (one click to their photos). |
+| **Saved** badge | The photo is already in your library (under `kpopping/`). |
+| **Fills / Whole** badge | What the **Auto** fit will do with the photo on your screen: fill it (little cut off), or show it whole over a blurred copy. Turn **Fills my screen** off to see every photo, Whole ones included; a Whole photo can still be filled with **Super+Alt+F** (below). |
+| **Fit button** in the notch (preview) | Steps the preview through Fill → Fit → Center → Stretch. Saving it keeps the fit you picked. |
+
+**Date ranges:** kpopping's API has no date filter, so the mod does it. With **Newest** it keeps loading until posts get older than the range. With **Hot** or **Most liked** it reads the newest 300 posts and ranks those by likes, so a past year of a very busy group may stop short.
 
 **+ Tagged:** kpopping lists a post under every idol tagged in it. Ryujin's feed includes "Yuna Instagram Update with Ryujin & Lia", for example. By default, an idol search only shows posts where that idol is the main one. Turn on **+ Tagged** to include the rest. Those photos are saved under their main idol (`ITZY/Yuna/`).
 
@@ -136,9 +142,21 @@ skwd-wall crops every wallpaper to fill the screen, so portrait photos get zoome
 
 | Wallpaper fit | |
 |---|---|
-| **Auto** (default) | Landscape images fill the screen. Portrait and square ones are shown whole. |
+| **Auto** (default) | Fills the screen unless that would cut off more than 20% of the image, else shows it whole. Your screen's shape decides: on 16:9, a 3:2 photo fills (11% cut off), a 4:3 or portrait one is shown whole. |
 | Fill / Fit / Stretch / Center / Tile | The same for every wallpaper. |
 | Leave it to skwd-wall | This mod doesn't touch the fill mode. |
+
+**One wallpaper at a time:** a fit you pick for a wallpaper is remembered (`~/.config/ambxst/kpopping-fit.json`) and wins over the setting. Bind these keys in your Hyprland config; the shell's process id is looked up each time, since its path changes with every mod update:
+
+```lua
+-- Hyprland Lua config (0.56+): Super+Alt+F steps the wallpaper on the focused screen through
+-- Fill → Fit → Center → Stretch; Super+Alt+Shift+F forgets it (back to the Wallpaper fit setting)
+local kpFit = [[qs ipc --pid "$(pgrep -of 'qs -p .*/shell\.qml')" call kpopping fit ]]
+hl.bind("SUPER + ALT + F", hl.dsp.exec_cmd(kpFit .. "next"))
+hl.bind("SUPER + ALT + SHIFT + F", hl.dsp.exec_cmd(kpFit .. "reset"))
+```
+
+(hyprland.conf: `bind = SUPER ALT, F, exec, qs ipc --pid "$(pgrep -of 'qs -p .*/shell\.qml')" call kpopping fit next`.) Tile isn't in the cycle: skwd-wall tiles from the top-left corner and has no setting to pick another part of the image.
 
 **Around a fitted image:** a blurred copy of the image (default) or skwd-wall's solid fill colour. Changing either setting re-applies the current wallpaper right away. The image size comes from the file header (PNG, JPEG, WebP, GIF). Videos always fill.
 

@@ -88,7 +88,8 @@ Singleton {
             return p.title + (p.channel ? " · " + p.channel : "") + (p.duration ? " · " + _clock(p.duration) : "")
                 + (ytInPlaylist(p.id) ? " · in My playlist" : "")
                 + (p.coming ? " · autoplay (click: jump here, Ctrl+click: queue)" : ytQueued(p.id) ? " · up next" : "");
-        return p.width + "×" + p.height + " · " + p.likes + (p.likes === 1 ? " like · " : " likes · ") + p.title;
+        return (isSaved(p.src) ? "Saved · " : "") + p.width + "×" + p.height + " · " + p.likes + (p.likes === 1 ? " like · " : " likes · ") + p.title
+            + (p.count > 1 && !postView ? " (" + p.count + " photos)" : "");
     }
     function _clock(sec) {
         const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
@@ -105,11 +106,23 @@ Singleton {
     signal queryRequested(string query) // a "recent search" chip was clicked
 
     // ── filter chips (shown in the tab's FilterBar) ─────────────────────
-    property var filters: ["sort:hot", "landscape"]
+    property var filters: ["sort:hot", "fills"]
     readonly property var staticChips: [
         { label: "Hot", type: "sort:hot" },
         { label: "Newest", type: "sort:new" },
         { label: "Most liked", type: "sort:top" },
+        { label: "", type: "sep:date" },
+        { label: "Past week", type: "since:week" },
+        { label: "Past month", type: "since:month" },
+        { label: "Past year", type: "since:year" },
+        { label: "", type: "sep:cat" },
+        { label: "SNS", type: "cat:sns" },
+        { label: "Official", type: "cat:official" },
+        { label: "Photoshoot", type: "cat:photoshoot" },
+        { label: "Fan photos", type: "cat:fantaken" },
+        { label: "Teasers", type: "cat:teaser" },
+        { label: "", type: "sep:shape" },
+        { label: "Fills my screen", type: "fills" },
         { label: "Landscape", type: "landscape" },
         { label: "Portrait", type: "portrait" },
         { label: "Square", type: "square" },
@@ -120,10 +133,11 @@ Singleton {
         { label: "4K", type: "4k" },
         { label: "8K", type: "8k" }
     ]
+    readonly property var _shapeChips: staticChips.slice(staticChips.findIndex(c => c.type === "fills"))   // a post: only these apply
     // how the FilterBar draws a chip: a tab (one is always picked), an icon toggle, a divider, or a plain chip
     readonly property var ytChipIcons: ({ "yt:loop": "repeatOnce", "yt:shuffle": "shuffle", "yt:autoplay": "next" })
     function chipKind(type) {
-        return type.startsWith("yt:sep") ? "sep" : ["yt:search", "yt:playlist", "yt:queue"].includes(type) ? "tab" : ytChipIcons[type] ? "icon" : "chip";
+        return type.startsWith("yt:sep") || type.startsWith("sep:") ? "sep" : ["yt:search", "yt:playlist", "yt:queue"].includes(type) ? "tab" : ytChipIcons[type] ? "icon" : "chip";
     }
     function chipActive(type) {
         return type === "yt:search" ? !ytListView && !ytQueueView : filters.includes(type);
@@ -150,19 +164,24 @@ Singleton {
         }
         let lead = [];
         if (!_query)
-            lead = recent.map(q => ({ label: q, type: "recent:" + q }));
+            lead = recent.map(q => ({ label: _shortLink(q), type: "recent:" + q }));
+        else if (_query === shownQuery && postView)   // one post: who's in it, one click to their photos
+            return related.map(n => ({ label: "→ " + n, type: "recent:" + n })).concat(related.length ? [{ label: "", type: "sep:post" }] : [], _shapeChips);
         else if (_query === shownQuery)
             lead = candidates.map(c => ({ label: c.label, type: "entity:" + c.key }));
         const tagged = entity && entity.type === "idol" ? [{ label: "+ Tagged", type: "tagged" }] : [];
-        return lead.concat(staticChips, tagged);
+        return lead.concat(lead.length ? [{ label: "", type: "sep:lead" }] : [], staticChips, tagged);
     }
     readonly property string _orient: filters.filter(f => ["landscape", "portrait", "square"].includes(f)).join(",")
     readonly property string _res: filters.filter(f => ["sd", "hd", "fhd", "2k", "4k", "8k"].includes(f)).join(",")
     readonly property bool _tagged: filters.includes("tagged")
+    readonly property bool _fills: filters.includes("fills")
     readonly property string _sort: (filters.find(f => f.startsWith("sort:")) || "sort:hot").slice(5)
+    readonly property string _since: (filters.find(f => f.startsWith("since:")) || "since:").slice(6)
+    readonly property string _cat: (filters.find(f => f.startsWith("cat:")) || "cat:").slice(4)
     property string entityKey: ""      // a match picked from the chips ("" = the best one)
     readonly property string _key: source === "youtube" ? "yt|" + (ytListView ? "list" : ytQueueView ? "queue" : "")
-        : [_orient, _res, entityKey, _tagged ? "tagged" : "", _sort].join("|")
+        : [_orient, _res, entityKey, _tagged ? "tagged" : "", _sort, _cat, _since, _fills ? "fills" : ""].join("|")
     readonly property bool ytListView: filters.includes("yt:playlist")
     readonly property bool ytQueueView: filters.includes("yt:queue")
 
@@ -191,9 +210,17 @@ Singleton {
             return;
         }
         // the Search tab: leave My playlist / Up next
-        if (filters.includes("yt:search") || filters.some(f => f.startsWith("yt:sep"))) {
-            filters = filters.filter(f => f !== "yt:search" && !f.startsWith("yt:sep") && (!filters.includes("yt:search") || f !== "yt:playlist" && f !== "yt:queue"));
+        if (filters.includes("yt:search") || filters.some(f => f.startsWith("yt:sep") || f.startsWith("sep:"))) {
+            filters = filters.filter(f => f !== "yt:search" && !f.startsWith("yt:sep") && !f.startsWith("sep:") && (!filters.includes("yt:search") || f !== "yt:playlist" && f !== "yt:queue"));
             return;
+        }
+        // date range / category: one at a time (or none), the newest wins
+        for (const prefix of ["since:", "cat:"]) {
+            const picked = filters.filter(f => f.startsWith(prefix));
+            if (picked.length > 1) {
+                filters = filters.filter(f => !f.startsWith(prefix) || f === picked[picked.length - 1]);
+                return;
+            }
         }
         // My playlist / Up next: one view at a time, the newest wins
         const views = filters.filter(f => f === "yt:playlist" || f === "yt:queue");
@@ -217,8 +244,9 @@ Singleton {
             pages = 1;
             photos = [];
         }
-        if (_sort !== _shownSort) {   // a different order starts again from the top
+        if (_sort !== _shownSort || _cat + "|" + _since !== _shownRange) {   // a different order / set starts again from the top
             _shownSort = _sort;
+            _shownRange = _cat + "|" + _since;
             pages = 1;
             photos = [];
         }
@@ -235,9 +263,43 @@ Singleton {
     property var photos: []
     property var entity: null
     property var candidates: []
+    property var related: []           // a pasted post: the idols / groups tagged in it
+    readonly property bool postView: source !== "youtube" && !!entity && entity.type === "post"
+
+    // A link in the box shows as its last part ("Ryujin", "251202-ntake-twitter-update").
+    function _shortLink(q) {
+        return q.replace(/^(https?:\/\/)?(www\.)?kpopping\.com\/(kpics\/|profiles\/(idol|group)\/)/, "").replace(/[/?#].*$/, "") || q;
+    }
+    // "Open this post": every image of the post a photo came from (its link goes in the box).
+    function canOpenPost(src) {
+        const p = bySrc[src];
+        return source !== "youtube" && !postView && !!p && !!p.post;
+    }
+    function openPost(src) {
+        const p = bySrc[src];
+        if (p && p.post)
+            queryRequested("https://kpopping.com/kpics/" + p.post);
+    }
+    // Already in your library: saved files end in _<the photo's id>.<ext> (see the bridge's save_path)
+    readonly property var _savedIds: {
+        const ids = {};
+        const wm = GlobalStates.wallpaperManager;
+        for (const path of (wm && wm.wallpaperPaths) || [])
+            if (path.indexOf("/kpopping/") !== -1)
+                ids[_photoId(path)] = true;
+        return ids;
+    }
+    function _photoId(path) {
+        return path.split("/").pop().split("_").pop().replace(/\.[^.]*$/, "");
+    }
+    function isSaved(src) {
+        const p = bySrc[src];
+        return source !== "youtube" && !!p && !!p.save && !!_savedIds[_photoId(p.save)];
+    }
     property string shownQuery: ""     // query the current photos belong to
     property string _shownKey: ""
     property string _shownSort: "hot"
+    property string _shownRange: "|"   // category | date range of the shown photos
     property int _shownPages: 0
     property var thumbs: ({})          // src -> image URL (cached file, or a fallback)
     property int pages: 1
@@ -314,7 +376,9 @@ Singleton {
         searchProc.pages = pages;
         searchProc.command = source === "youtube" ? ["python3", bridge, "yt", _query, "--pages", String(pages)]
             : ["python3", bridge, "search", _query, "--orient", _orient, "--res", _res, "--pages", String(pages)]
-                .concat(entityKey ? ["--entity", entityKey] : [], _tagged ? ["--tagged"] : [], ["--sort", _sort]);
+                .concat(entityKey ? ["--entity", entityKey] : [], _tagged ? ["--tagged"] : [], ["--sort", _sort],
+                        _cat ? ["--category", _cat] : [], _since ? ["--since", _since] : [],
+                        ["--screen", screenSize(AxctlService.focusedMonitor ? AxctlService.focusedMonitor.name : "")], _fills ? ["--fills"] : []);
         searchProc.running = true;
     }
 
@@ -362,6 +426,7 @@ Singleton {
                 root.thumbs = t;
                 root.entity = d.entity || null;
                 root.candidates = d.candidates || [];
+                root.related = d.related || [];
                 root.hasMore = !!d.more;
                 root.photos = d.photos || [];
                 root._ytShownKey = "";
@@ -424,6 +489,7 @@ Singleton {
         const path = wm.wallpaperDir.replace(/\/+$/, "") + "/kpopping/" + photo.save;
         const fromPreview = src === previewSrc && previewing ? previewPath : "";
         _clearPreview();
+        _moveFit(fromPreview, path);
         if (wm.wallpaperPaths.indexOf(path) !== -1) {
             _handOver(fromPreview, path);
             _set(path, screenName, false);
@@ -501,6 +567,7 @@ Singleton {
         const was = previewing || previewPending;
         if (previewing && _revertPath)
             _set(_revertPath, _previewScreen, false);
+        _moveFit(previewPath, "");
         _clearPreview();
         if (!was)
             return;
@@ -1274,11 +1341,96 @@ Singleton {
     property string fitMode: "auto"        // auto | fill | fit | stretch | center | tile | skwd
     property string fitBackground: "blur"  // blur | color
 
-    // SkwdWall.applyCommand wraps its skwd-helm call with this.
-    function withFit(file, command) {
-        if (fitMode === "skwd")
+    // SkwdWall.applyCommand wraps its skwd-helm call with this. A fit picked for this wallpaper
+    // (Super+Alt+F, the notch's fit button) wins over the setting, even over "Leave it to skwd-wall".
+    function withFit(file, command, output) {
+        const mode = fitOverrides[file] || fitMode;
+        if (mode === "skwd")
             return command;
-        return ["sh", "-c", 'python3 "$1" fit "$2" "$3" "$4" >/dev/null 2>&1; shift 4; exec "$@"', "sh", bridge, file, fitMode, fitBackground].concat(command);
+        return ["sh", "-c", 'python3 "$1" fit "$2" "$3" "$4" "$5" >/dev/null 2>&1; shift 5; exec "$@"', "sh", bridge, file, mode, fitBackground, screenSize(output)].concat(command);
+    }
+
+    // "WxH" in real pixels of that monitor ("" = the first one: one image on every screen)
+    function screenSize(name) {
+        const mons = AxctlService.monitors.values || [];
+        const m = mons.find(m => m.name === name) || mons[0];
+        return m && m.width && m.height ? m.width + "x" + m.height : "";
+    }
+
+    // ── fit per wallpaper: path -> mode, in ~/.config/ambxst/kpopping-fit.json ──
+    // shortcut: keyed by path, so a renamed or moved file forgets its fit; entries for deleted files stay (tiny).
+    property var fitOverrides: ({})
+    readonly property var fitCycle: ["fill", "fit", "center", "stretch"]   // tile: skwd only shows the top-left corner
+    readonly property var fitNames: ({ fill: "Fill (crop to the screen)", fit: "Fit (whole image)", center: "Center (original size)", stretch: "Stretch", tile: "Tile", auto: "Auto", skwd: "skwd-wall's own" })
+    FileView {
+        id: fitFile
+        path: Quickshell.env("HOME") + "/.config/ambxst/kpopping-fit.json"
+        printErrors: false
+        onLoaded: {
+            try {
+                root.fitOverrides = JSON.parse(text()) || {};
+            } catch (e) {}
+        }
+    }
+    FileView {
+        id: skwdCfg   // what skwd last applied: the fit on screen when this wallpaper has none of its own
+        path: Quickshell.env("HOME") + "/.config/skwd-wall-v2/config.json"
+        blockLoading: true
+        printErrors: false
+    }
+    function _saveFits(next) {
+        fitOverrides = next;
+        fitFile.setText(JSON.stringify(next, null, 1) + "\n");
+    }
+    function _moveFit(from, to) {
+        if (!from || !fitOverrides[from])
+            return;
+        const next = Object.assign({}, fitOverrides);
+        if (to)
+            next[to] = next[from];
+        delete next[from];
+        _saveFits(next);
+    }
+
+    // "next" / "prev": step this wallpaper through Fill → Fit → Center → Stretch; "reset": back to the setting.
+    // Works on the preview while there is one, else on the focused screen's wallpaper.
+    function cycleFit(step) {
+        const path = previewing ? previewPath : _current(AxctlService.focusedMonitor ? AxctlService.focusedMonitor.name : "");
+        if (!path || ytPlaying)   // a YouTube video covers the wallpaper: nothing to see
+            return ytPlaying ? "YouTube video playing" : "no wallpaper";
+        const next = Object.assign({}, fitOverrides);
+        let mode;
+        if (step === "reset") {
+            delete next[path];
+            mode = fitMode;
+        } else {
+            let now = fitOverrides[path];
+            if (!now) {
+                // shortcut: skwd's fill mode is global, so with different wallpapers per screen this is the last one applied
+                skwdCfg.reload();
+                try {
+                    now = (JSON.parse(skwdCfg.text()).display || {}).fillMode;
+                } catch (e) {}
+            }
+            const i = fitCycle.indexOf(now);
+            mode = fitCycle[i < 0 ? 0 : (i + (step === "prev" ? fitCycle.length - 1 : 1)) % fitCycle.length];
+            next[path] = mode;
+        }
+        _saveFits(next);
+        SkwdWall.applied = ({});   // apply the wallpaper again with the new fit
+        SkwdWall.sync();
+        const name = fitNames[mode] || mode;
+        Quickshell.execDetached(["notify-send", "-a", "Wallpaper", "-t", "1500", "-h", "string:x-canonical-private-synchronous:kpopping-fit",
+                                 "Wallpaper fit: " + name, step === "reset" ? "Back to the Wallpaper fit setting" : "Remembered for this wallpaper"]);
+        return name;
+    }
+
+    IpcHandler {
+        target: "kpopping"
+        // qs ipc --pid <shell pid> call kpopping fit next|prev|reset
+        function fit(step: string): string {
+            return root.cycleFit(step);
+        }
     }
 
     function _setting(key, value) {

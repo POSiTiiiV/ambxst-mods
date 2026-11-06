@@ -4,7 +4,8 @@
 usage:
   kpopping_bridge.py search <query> [--orient landscape,portrait,square] [--res sd,hd,fhd,2k,4k,8k]
                                     [--pages N] [--entity idol:<id>|group:<id>] [--tagged] [--sort hot|new|top]
-  kpopping_bridge.py fit <image> <auto|fill|fit|stretch|center|tile> <blur|color>
+                                    [--screen WIDTHxHEIGHT] [--fills]
+  kpopping_bridge.py fit <image> <auto|fill|fit|stretch|center|tile> <blur|color> [WIDTHxHEIGHT]
   kpopping_bridge.py yt <search words | youtube video/playlist link> [--pages N]
   kpopping_bridge.py mpv <json command array>        e.g. mpv '["cycle","mute"]'
   kpopping_bridge.py mpv-watch                       stream the player's title/mute/pause as JSON lines
@@ -53,7 +54,9 @@ local-thumbs: for each path (one per line), a 480 px (long edge) JPEG that keeps
   Thumbnails of files that are gone are pruned.
 
 fit: writes skwd-wall's display.fillMode / display.backgroundMode before an apply.
-  auto = landscape images fill the screen, portrait and square ones are shown whole.
+  auto = fill the screen unless that cuts off more than 20% of the image, else show it whole (the
+  screen's size, default 1920x1080, decides). --fills keeps photos Auto fills that need at most 10%
+  upscaling; every photo gets "fit": "fill" | "fit" (what Auto will do) for the card badge.
 
 Caches in ~/.cache/ambxst/kpopping: name lookups and post pages (6 h), album sizes (per post,
 until the album grows), idols' groups, and thumbnails (384 px, shrunk with ffmpeg when kpopping's
@@ -74,6 +77,7 @@ import struct
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -84,6 +88,9 @@ UA = "ambxst-kpopping/1.0 (+https://github.com/POSiTiiiV/ambxst-mods)"
 MIN_RATIO = 1.2
 PAGE = 30
 RES_BUCKETS = [("sd", 0), ("hd", 1280), ("fhd", 1920), ("2k", 2560), ("4k", 3840), ("8k", 7680)]
+DEFAULT_SCREEN = (1920, 1080)
+MAX_CROP = 0.2      # auto fit: fill when that cuts off at most 20% of the image (3:2 on 16:9 = 11%, 4:3 = 25%)
+MAX_UPSCALE = 1.1   # "Fills my screen": the image may be stretched at most 10% to cover the screen
 CACHE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "ambxst" / "kpopping"
 TTL = 6 * 3600
 WALL_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".gif"}  # what Ambxst's scan picks up
@@ -229,27 +236,127 @@ def resolution(w, h):
     return [name for name, edge in RES_BUCKETS if max(w, h) >= edge][-1]
 
 
-def page_posts(entity, page, sort):
+def parse_screen(text):
+    w, _, h = (text or "").partition("x")
+    return (int(w), int(h)) if w.isdigit() and h.isdigit() and int(w) and int(h) else DEFAULT_SCREEN
+
+
+def auto_fit(w, h, screen):
+    """Auto's choice: fill unless that cuts off more than MAX_CROP of the image, else show it whole."""
+    if not w or not h:
+        return "fill"
+    r = (w / h) / (screen[0] / screen[1])
+    return "fill" if 1 - min(r, 1 / r) <= MAX_CROP else "fit"
+
+
+def fills_screen(w, h, screen):
+    """The "Fills my screen" chip: Auto fills it, and it's big enough not to be upscaled much."""
+    return bool(w and h) and auto_fit(w, h, screen) == "fill" and max(screen[0] / w, screen[1] / h) <= MAX_UPSCALE
+
+
+CATEGORIES = ("sns", "official", "photoshoot", "fantaken", "teaser")  # all kpopping's API accepts (others: 400)
+SINCE_DAYS = {"week": 7, "month": 31, "year": 366}
+RANGE_PAGES = 10  # Hot / Most liked within a date range: newest uploads scanned, then sorted here
+
+
+def page_posts(entity, page, sort, category=""):
     key = "idolId" if entity["type"] == "idol" else "groupId"
-    return cached(CACHE / "pages" / f"{entity['type']}-{entity['id']}-{sort}-{page}.json",
-                  lambda: get("photos", **{key: entity["id"], "limit": PAGE, "offset": page * PAGE, "sort": sort}))
+    params = {key: entity["id"], "limit": PAGE, "offset": page * PAGE, "sort": sort}
+    if category:
+        params["category"] = category
+    return cached(CACHE / "pages" / f"{entity['type']}-{entity['id']}-{sort}-{category}-{page}.json",
+                  lambda: get("photos", **params))
 
 
-def search(query, pages, entity_key, tagged, sort="hot"):
-    """Every album image of the entity's first `pages` pages of posts, any orientation (filtered later)."""
-    cands = candidates(query)
+def post_date(post):
+    """When the photo was taken (photoDate), else when it was uploaded."""
+    return post.get("photoDate") or (post.get("createdAt") or "")[:10]
+
+
+def parse_link(query):
+    """A kpopping link pasted in the box: ("post", slug), ("idol", slug), ("group", slug), or None."""
+    m = re.search(r"kpopping\.com/kpics/([^/?#\s]+)", query)
+    if m:
+        return "post", urllib.parse.unquote(m.group(1))
+    m = re.search(r"kpopping\.com/profiles/(idol|group)/([^/?#\s]+)", query)
+    if m:
+        return m.group(1), urllib.parse.unquote(m.group(2))
+    return None
+
+
+def profile(kind, slug):
+    """The idol / group a profile link points to (by slug: no name guessing, no match chips)."""
+    def compute():
+        if kind == "idol":
+            d = get(f"idols/{urllib.parse.quote(slug)}")
+            name = d.get("stageName") or d["slug"]
+            return {"key": f"idol:{d['id']}", "id": d["id"], "type": "idol", "name": name, "group": idol_group(d["id"], name)}
+        d = get(f"groups/{urllib.parse.quote(slug)}")
+        return {"key": f"group:{d['id']}", "id": d["id"], "type": "group", "name": d.get("name") or d["slug"], "group": None}
+    return cached(CACHE / "names" / f"{kind}-{hashlib.sha1(slug.lower().encode()).hexdigest()}.json", compute, ttl=30 * 86400)
+
+
+def post_search(slug):
+    """Every image of one post (a pasted kpics link), saved under its idol or group like any other."""
+    k = get(f"kpics/{urllib.parse.quote(slug)}")
+    names = [n.strip() for n in (k.get("idolName") or "").split(",") if n.strip()]
+    if k.get("idolId") and names:
+        entity = {"type": "idol", "id": k["idolId"], "name": names[0],
+                  "groupName": k.get("groupName") or idol_group(k["idolId"], names[0])}
+    else:
+        entity = {"type": "group", "id": k.get("groupId") or "", "name": k.get("groupName") or "kpopping"}
+    photos = []
+    for img in k.get("albumImages") or []:
+        w, h, src = img.get("width") or 0, img.get("height") or 0, img.get("src")
+        if src and w and h:
+            photos.append({"src": src, "title": k.get("title", ""), "width": w, "height": h, "likes": k.get("likes") or 0,
+                           "post": k.get("slug") or slug, "count": len(k.get("albumImages") or []),
+                           "save": save_path(k, entity, src, idol_group)})
+    tagged = [t.get("name") for t in (k.get("taggedIdols") or []) + (k.get("taggedGroups") or []) if t.get("name")]
+    return {"status": "ok", "photos": photos, "more": False,
+            "entity": {"key": "post:" + (k.get("slug") or slug), "name": k.get("title", ""), "group": None, "type": "post"},
+            "candidates": [], "related": list(dict.fromkeys(tagged))}
+
+
+def search(query, pages, entity_key, tagged, sort="hot", category="", since=""):
+    """Every album image of the entity's first `pages` pages of posts, any orientation (filtered later).
+    A pasted kpopping link: that post's images, or that idol / group. `since` (week / month / year)
+    keeps posts from then on: Newest pages stop at the cutoff, Hot / Most liked scan the newest
+    RANGE_PAGES pages and sort by likes here (kpopping's API has no date filter)."""
+    link = parse_link(query)
+    if link and link[0] == "post":
+        try:
+            return post_search(link[1])
+        except urllib.error.HTTPError:
+            return {"status": "error", "message": f"kpopping has no post '{link[1]}'"}
+    if link:
+        try:
+            cands = [profile(*link)]
+        except Exception:
+            return {"status": "error", "message": f"kpopping has no {link[0]} '{link[1]}'"}
+    else:
+        cands = candidates(query)
     if not cands:
         return {"status": "error", "message": f"No idol or group found for '{query}'"}
     entity = next((c for c in cands if c["key"] == entity_key), cands[0])
     entity = {**entity, "groupName": entity["group"]}
 
+    cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - SINCE_DAYS[since] * 86400)) if since in SINCE_DAYS else ""
     posts, more = [], False
-    for page in range(pages):
-        batch = page_posts(entity, page, sort)
+    ranked = bool(cutoff) and sort != "new"
+    for page in range(RANGE_PAGES if ranked else pages):
+        batch = page_posts(entity, page, "new" if ranked else sort, category)
         posts += batch
         more = len(batch) == PAGE
+        if cutoff and sort == "new" or ranked:  # uploads come newest first: stop past the cutoff
+            more = more and bool(batch) and (batch[-1].get("createdAt") or "")[:10] >= cutoff
         if not more:
             break
+    if cutoff:
+        posts = [p for p in posts if post_date(p) >= cutoff]
+    if ranked:
+        posts.sort(key=lambda p: -(p.get("likes") or 0))
+        more = False
     if entity["type"] == "idol" and not tagged:
         posts = [p for p in posts if p.get("idolId") in (None, entity["id"])]
 
@@ -279,14 +386,15 @@ def search(query, pages, entity_key, tagged, sort="hot"):
                 if src and w and h and src not in seen:
                     seen.add(src)
                     photos.append({"src": src, "title": post.get("title", ""), "width": w, "height": h,
-                                   "likes": post.get("likes") or 0,
+                                   "likes": post.get("likes") or 0, "post": post.get("slug") or "",
+                                   "count": post.get("albumCount") or len(images),
                                    "save": save_path(post, entity, src, idol_group)})
     save(albums_file, albums)
 
     label = lambda c: c["name"] + (" · " + c["group"] if c.get("group") else "")
     return {"status": "ok", "photos": photos, "more": more,
             "entity": {"key": entity["key"], "name": entity["name"], "group": entity["group"], "type": entity["type"]},
-            "candidates": [{"key": c["key"], "label": label(c)} for c in cands] if len(cands) > 1 else []}
+            "candidates": [{"key": c["key"], "label": label(c)} for c in cands] if len(cands) > 1 else [], "related": []}
 
 
 def thumb_file(src):
@@ -364,10 +472,10 @@ def image_size(path):
     return None
 
 
-def fit(image, mode, background):
+def fit(image, mode, background, screen=""):
     if mode == "auto":
         size = image_size(image)
-        mode = "fit" if size and all(size) and orientation(*size) != "landscape" else "fill"
+        mode = auto_fit(*(size or (0, 0)), parse_screen(screen))
     cfg = load(SKWD_CONFIG, None)
     if cfg is None:
         return 0  # skwd-wall not set up yet (or a config it can't read either): leave it alone
@@ -1063,7 +1171,7 @@ def local_thumbs(list_file):
 # ── cli ──────────────────────────────────────────────────────────────────
 
 def main(argv):
-    if len(argv) == 4 and argv[0] == "fit":
+    if len(argv) in (4, 5) and argv[0] == "fit":
         return fit(*argv[1:])
     if argv[:1] == ["mpv-watch"]:
         return mpv_watch()
@@ -1096,18 +1204,24 @@ def main(argv):
     entity_key = arg("--entity", "")
     tagged = "--tagged" in argv
     sort = arg("--sort", "hot") if arg("--sort", "hot") in ("hot", "new", "top") else "hot"
+    category = arg("--category", "") if arg("--category", "") in CATEGORIES else ""
+    since = arg("--since", "") if arg("--since", "") in SINCE_DAYS else ""
+    screen = parse_screen(arg("--screen", ""))
+    fills = "--fills" in argv
     prune(CACHE / "thumbs", 30)
     prune(CACHE / "full", 7, keep=in_use())
     try:
-        out = search(argv[1], pages, entity_key, tagged, sort)
+        out = search(argv[1], pages, entity_key, tagged, sort, category, since)
     except Exception as e:
         out = {"status": "error", "message": str(e)}
 
     photos = [p for p in out.get("photos", [])
               if (not orient or orientation(p["width"], p["height"]) in orient)
-              and (not res or resolution(p["width"], p["height"]) in res)]
+              and (not res or resolution(p["width"], p["height"]) in res)
+              and (not fills or fills_screen(p["width"], p["height"], screen))]
     missing = []
     for p in photos:
+        p["fit"] = auto_fit(p["width"], p["height"], screen)  # the card's Fills / Whole badge
         f = thumb_file(p["src"])
         if f.exists():
             os.utime(f)  # keeps it out of the 30-day prune
@@ -1116,7 +1230,7 @@ def main(argv):
             missing.append(p["src"])
     # query/key/pages let the shell drop stale results
     emit({**out, "photos": photos, "totalFound": len(photos), "query": argv[1], "pages": pages,
-          "key": "|".join([arg("--orient", ""), arg("--res", ""), entity_key, "tagged" if tagged else "", sort])})
+          "key": "|".join([arg("--orient", ""), arg("--res", ""), entity_key, "tagged" if tagged else "", sort, category, since, "fills" if fills else ""])})
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         for src, url in pool.map(fetch_thumb, missing):
@@ -1133,6 +1247,11 @@ if __name__ == "__main__":
     assert save_path({"photoDate": "2026-10-26", "idolId": "k", "idolName": "Karina"}, karina, src) == "aespa/Karina/Karina_2026-10-26_8g362k-6.jpg"
     assert save_path(yuna_post, ryujin, src, lambda i, n: "ITZY") == "ITZY/Yuna/Yuna_2026-09-17_8g362k-6.jpg"
     assert save_path(yuna_post, itzy, src) == "ITZY/mix/ITZY_2026-09-17_8g362k-6.jpg"
+    assert parse_link("https://kpopping.com/kpics/251202-ntake-twitter-update?x=1") == ("post", "251202-ntake-twitter-update")
+    assert parse_link("kpopping.com/profiles/idol/Ryujin") == ("idol", "Ryujin")
+    assert parse_link("https://www.kpopping.com/profiles/group/ITZY/") == ("group", "ITZY")
+    assert parse_link("ryujin") is None
+    assert post_date({"photoDate": None, "createdAt": "2026-11-05T04:33:25.611Z"}) == "2026-11-05"
     assert save_path({"idolName": "Yuna"}, itzy, src).startswith("ITZY/Yuna/Yuna_")
     assert save_path({}, {"type": "group", "id": "z", "name": "IZ*ONE"}, src) == "IZ*ONE/mix/IZ*ONE_undated_8g362k-6.jpg"
     assert save_path({"idolName": "IU", "idolId": "i"}, {"type": "idol", "id": "i", "name": "IU"}, src).startswith("IU/IU_")
@@ -1140,5 +1259,8 @@ if __name__ == "__main__":
     assert YT_LINK.match("https://youtube.com/playlist?list=PLx") and YT_LINK.match("https://youtu.be/abcdefghijk")
     assert not YT_LINK.match("--exec rm") and not YT_LINK.match("https://evil.example/youtube.com/x")
     assert [orientation(*s) for s in ((1920, 1080), (1080, 1350), (1000, 1000))] == ["landscape", "portrait", "square"]
+    assert [auto_fit(*s, (1920, 1080)) for s in ((1920, 1080), (3000, 2000), (1600, 1200), (1080, 1350), (0, 0))] == ["fill", "fill", "fit", "fit", "fill"]
+    assert auto_fit(1080, 1920, (1080, 1920)) == "fill" and parse_screen("2560x1440") == (2560, 1440) and parse_screen("x") == DEFAULT_SCREEN
+    assert fills_screen(1800, 1200, (1920, 1080)) and not fills_screen(1280, 720, (1920, 1080)) and not fills_screen(0, 0, (1920, 1080))
     assert [resolution(*s) for s in ((1024, 682), (1080, 1920), (2592, 1944), (4096, 3072), (8000, 6000))] == ["sd", "fhd", "2k", "4k", "8k"]
     sys.exit(main(sys.argv[1:]))
