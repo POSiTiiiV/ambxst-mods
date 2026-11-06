@@ -1334,7 +1334,7 @@ index f914730..2d19925 100644
                  var version = GlobalStates.wallpaperManager.thumbnailsVersion;
                  return "file://" + thumbnailPath + "?v=" + version;
 diff --git a/modules/widgets/defaultview/DefaultView.qml b/modules/widgets/defaultview/DefaultView.qml
-index c75a7ad..1a3120a 100644
+index c75a7ad..3c93163 100644
 --- a/modules/widgets/defaultview/DefaultView.qml
 +++ b/modules/widgets/defaultview/DefaultView.qml
 @@ -1,4 +1,6 @@
@@ -1353,7 +1353,7 @@ index c75a7ad..1a3120a 100644
 +    // fit / ✓ / ✗); a YouTube wallpaper fits the usual width (title, or controls on hover), and only an expanding notch
 +    // grows on hover to title + controls
 +    readonly property real kpExtra: !kpPreview.visible ? 0
-+        : (kpPreview.showTitle && kpPreview.showControls) ? Math.min(360, Math.max(0, kpTitle.contentWidth + kpButtons.width + 24 - 200))
++        : (kpPreview.showTitle && kpPreview.showControls) ? Math.min(360, Math.max(0, kpTitle.contentWidth + kpButtons.width + (kpPreview.photoMode ? 64 : 24) - 200))   // a preview gets some air around its short title
 +        : kpPreview.showControls ? Math.max(0, kpButtons.width + 16 - 200) : 0   // controls in the title's place: just enough room
 +    readonly property real mainRowContentWidth: 200 + kpExtra + userInfo.width + separator1.width + separator2.width + notifIndicator.width + (mainRow.spacing * 4) + mainRowMargin
      readonly property real mainRowHeight: Config.showBackground ? (Config.notchTheme === "island" ? 36 : 44) : (Config.notchTheme === "island" ? 36 : 40)
