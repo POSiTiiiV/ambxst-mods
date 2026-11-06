@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "positive.ambxst-kpopping",
   "name": "Kpopping Online Wallpapers",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "description": "Online wallpapers in Ambxst's Wallpapers tab. kpopping.com: search K-pop idols and groups (ranked matches, recent searches, infinite scroll, Hot / Newest / Most liked, orientation and SD-8K chips), preview on an empty workspace, keep or drop it from the notch, saved as <wallpaper dir>/kpopping/<Group>/<Idol>/. YouTube: search or paste a link, play videos as a live wallpaper (muted, controls in the notch), My playlist, Up next queue, loop / shuffle / autoplay, quality matched to your screen. Also a Wallpaper fit setting for skwd-wall (smart Auto, a fit remembered per wallpaper, Super+Alt+F to change it), a 'Fills my screen' chip with Fills / Whole badges and a faster-opening picker.",
   "license": "MIT",
   "author": "POSiTiiiV",

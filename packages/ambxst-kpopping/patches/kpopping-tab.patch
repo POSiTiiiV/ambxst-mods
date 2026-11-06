@@ -1334,7 +1334,7 @@ index f914730..2d19925 100644
                  var version = GlobalStates.wallpaperManager.thumbnailsVersion;
                  return "file://" + thumbnailPath + "?v=" + version;
 diff --git a/modules/widgets/defaultview/DefaultView.qml b/modules/widgets/defaultview/DefaultView.qml
-index c75a7ad..2f0168b 100644
+index c75a7ad..1a3120a 100644
 --- a/modules/widgets/defaultview/DefaultView.qml
 +++ b/modules/widgets/defaultview/DefaultView.qml
 @@ -1,4 +1,6 @@
@@ -1344,14 +1344,15 @@ index c75a7ad..2f0168b 100644
  import Quickshell.Services.Mpris
  import qs.modules.theme
  import qs.modules.services
-@@ -66,12 +68,17 @@ Item {
+@@ -66,12 +68,18 @@ Item {
      }
  
      // Computed dimensions
 -    readonly property real mainRowContentWidth: 200 + userInfo.width + separator1.width + separator2.width + notifIndicator.width + (mainRow.spacing * 4) + mainRowMargin
-+    // positive.ambxst-kpopping: a kpopping preview gets room for fit / ✓ / ✗; a YouTube wallpaper fits the usual width
-+    // (title, or controls on hover), and only an expanding notch grows on hover to title + controls
-+    readonly property real kpExtra: !kpPreview.visible ? 0 : kpPreview.photoMode ? 130
++    // positive.ambxst-kpopping: room for the strip's title + controls (a kpopping preview shows both: "Preview · W×H",
++    // fit / ✓ / ✗); a YouTube wallpaper fits the usual width (title, or controls on hover), and only an expanding notch
++    // grows on hover to title + controls
++    readonly property real kpExtra: !kpPreview.visible ? 0
 +        : (kpPreview.showTitle && kpPreview.showControls) ? Math.min(360, Math.max(0, kpTitle.contentWidth + kpButtons.width + 24 - 200))
 +        : kpPreview.showControls ? Math.max(0, kpButtons.width + 16 - 200) : 0   // controls in the title's place: just enough room
 +    readonly property real mainRowContentWidth: 200 + kpExtra + userInfo.width + separator1.width + separator2.width + notifIndicator.width + (mainRow.spacing * 4) + mainRowMargin
@@ -1364,7 +1365,7 @@ index c75a7ad..2f0168b 100644
  
      implicitHeight: hasActiveNotifications ? mainRowHeight + notificationContainerHeight : mainRowHeight
  
-@@ -157,6 +164,263 @@ Item {
+@@ -157,6 +165,263 @@ Item {
                  height: 32
                  player: activePlayer
                  notchHovered: expandedState
