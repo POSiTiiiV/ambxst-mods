@@ -4,7 +4,7 @@
 usage:
   kpopping_bridge.py search <query> [--orient landscape,portrait,square] [--res sd,hd,fhd,2k,4k,8k]
                                     [--pages N] [--entity idol:<id>|group:<id>] [--tagged] [--sort hot|new|top]
-                                    [--screen WIDTHxHEIGHT] [--fills]
+                                    [--screen WIDTHxHEIGHT] [--fills] [--saved <wallpaper dir>/kpopping]
   kpopping_bridge.py fit <image> <auto|fill|fit|stretch|center|tile> <blur|color> [WIDTHxHEIGHT]
   kpopping_bridge.py yt <search words | youtube video/playlist link> [--pages N]
   kpopping_bridge.py mpv <json command array>        e.g. mpv '["cycle","mute"]'
@@ -57,6 +57,8 @@ fit: writes skwd-wall's display.fillMode / display.backgroundMode before an appl
   auto = fill the screen unless that cuts off more than 20% of the image, else show it whole (the
   screen's size, default 1920x1080, decides). --fills keeps photos Auto fills that need at most 10%
   upscaling; every photo gets "fit": "fill" | "fit" (what Auto will do) for the card badge.
+  --saved: your saved photos instead of kpopping's feed (all of them with an empty query), each with
+  "local" (its file) and its post found again through the album cache; no paging, no category.
 
 Caches in ~/.cache/ambxst/kpopping: name lookups and post pages (6 h), album sizes (per post,
 until the album grows), idols' groups, and thumbnails (384 px, shrunk with ffmpeg when kpopping's
@@ -394,6 +396,94 @@ def search(query, pages, entity_key, tagged, sort="hot", category="", since=""):
     label = lambda c: c["name"] + (" · " + c["group"] if c.get("group") else "")
     return {"status": "ok", "photos": photos, "more": more,
             "entity": {"key": entity["key"], "name": entity["name"], "group": entity["group"], "type": entity["type"]},
+            "candidates": [{"key": c["key"], "label": label(c)} for c in cands] if len(cands) > 1 else [], "related": []}
+
+
+SAVED_NAME = re.compile(r"_(\d{4}-\d{2}-\d{2}|undated)_(.+)\.[^.]+$")  # <Idol>_<date>_<photo id>.<ext>
+
+
+def saved_posts(post_ids):
+    """Post id -> {slug, title, likes, albumCount}: from the cached result pages, else one API call each
+    (kept in saved-posts.json for good: a saved photo's post doesn't move)."""
+    known_file = CACHE / "saved-posts.json"
+    known = load(known_file, {})
+    for f in (CACHE / "pages").glob("*.json"):
+        for post in (load(f, {}) or {}).get("value") or []:
+            if isinstance(post, dict) and post.get("id") in post_ids:
+                known[post["id"]] = {k: post.get(k) for k in ("slug", "title", "likes", "albumCount")}
+    missing = [i for i in post_ids if i not in known]
+
+    def one(post_id):
+        try:
+            k = get(f"kpics/{post_id}")
+            return post_id, {"slug": k.get("slug"), "title": k.get("title"), "likes": k.get("likes"),
+                             "albumCount": len(k.get("albumImages") or [])}
+        except Exception:
+            return post_id, None
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for post_id, info in pool.map(one, missing):
+            if info:
+                known[post_id] = info
+    save(known_file, known)
+    return known
+
+
+def saved_matches(rel, entity):
+    """Is this saved file (path under kpopping/) the entity's? Folders follow save_path: <Group>/<Idol>/, <Soloist>/."""
+    parts = rel.split("/")
+    if entity["type"] == "group":
+        return parts[0] == clean(entity["name"])
+    group = entity.get("groupName") or entity.get("group")
+    return len(parts) >= 2 and parts[-2] == clean(entity["name"]) and (len(parts) == 2 or not group or parts[0] == clean(group))
+
+
+def saved_search(query, kp_dir, entity_key="", sort="hot", since=""):
+    """Your saved photos (<wallpaper dir>/kpopping/): all of them (empty box), an idol's / group's, or one
+    post's (a pasted link). Each finds its post again through the album cache (photo id -> post), for the
+    kpopping.com link, likes and title. Newest first; Most liked: by likes."""
+    root = Path(kp_dir)
+    files = [f for f in root.rglob("*") if f.suffix.lower() in WALL_EXTS and f.is_file()] if root.is_dir() else []
+    entity, cands, post_slug = None, [], ""
+    link = parse_link(query) if query.strip() else None
+    if link and link[0] == "post":
+        post_slug = link[1]
+    elif query.strip():
+        try:
+            cands = [profile(*link)] if link else candidates(query)
+        except Exception:
+            return {"status": "error", "message": f"kpopping has no {link[0]} '{link[1]}'" if link else "kpopping.com can't be reached"}
+        if not cands:
+            return {"status": "error", "message": f"No idol or group found for '{query}'"}
+        entity = next((c for c in cands if c["key"] == entity_key), cands[0])
+        files = [f for f in files if saved_matches(f.relative_to(root).as_posix(), entity)]
+
+    by_uid = {}  # photo id -> (post id, image) from every album the mod has loaded
+    for post_id, hit in load(CACHE / "albums.json", {}).items():
+        for img in (hit[1] if isinstance(hit, list) and len(hit) == 2 else []):
+            if img.get("src"):
+                by_uid[img["src"].rsplit("/", 1)[-1].rsplit(".", 1)[0].split("-", 1)[-1]] = (post_id, img)
+    found = {}
+    for f in files:
+        m = SAVED_NAME.search(f.name)
+        found[f] = (m.group(1).replace("undated", "") if m else "", by_uid.get(m.group(2)) if m else None)
+    posts = saved_posts({hit[0] for _, hit in found.values() if hit})
+
+    cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - SINCE_DAYS[since] * 86400)) if since in SINCE_DAYS else ""
+    photos = []
+    for f, (date, hit) in found.items():
+        post = posts.get(hit[0], {}) if hit else {}
+        if post_slug and post.get("slug") != post_slug or cutoff and date < cutoff:
+            continue
+        img = hit[1] if hit else {}
+        w, h = (img.get("width"), img.get("height")) if img.get("width") else (image_size(f) or (0, 0))
+        photos.append({"src": img.get("src") or f.as_uri(), "title": post.get("title") or f.stem, "width": w or 0, "height": h or 0,
+                       "likes": post.get("likes") or 0, "post": post.get("slug") or "", "count": post.get("albumCount") or 0,
+                       "save": f.relative_to(root).as_posix(), "local": str(f), "date": date})
+    photos.sort(key=lambda p: (-p["likes"], p["save"]) if sort == "top" else (p["date"], p["save"]), reverse=sort != "top")
+    label = lambda c: c["name"] + (" · " + c["group"] if c.get("group") else "")
+    return {"status": "ok", "photos": photos, "more": False,
+            "entity": {"key": entity["key"], "name": entity["name"], "group": entity["group"], "type": entity["type"]} if entity
+            else {"key": "post:" + post_slug, "name": post_slug, "group": None, "type": "post"} if post_slug else None,
             "candidates": [{"key": c["key"], "label": label(c)} for c in cands] if len(cands) > 1 else [], "related": []}
 
 
@@ -1206,12 +1296,14 @@ def main(argv):
     sort = arg("--sort", "hot") if arg("--sort", "hot") in ("hot", "new", "top") else "hot"
     category = arg("--category", "") if arg("--category", "") in CATEGORIES else ""
     since = arg("--since", "") if arg("--since", "") in SINCE_DAYS else ""
+    saved_dir = arg("--saved", "")
     screen = parse_screen(arg("--screen", ""))
     fills = "--fills" in argv
     prune(CACHE / "thumbs", 30)
     prune(CACHE / "full", 7, keep=in_use())
     try:
-        out = search(argv[1], pages, entity_key, tagged, sort, category, since)
+        out = (saved_search(argv[1], saved_dir, entity_key, sort, since) if saved_dir
+               else search(argv[1], pages, entity_key, tagged, sort, category, since))
     except Exception as e:
         out = {"status": "error", "message": str(e)}
 
@@ -1222,6 +1314,9 @@ def main(argv):
     missing = []
     for p in photos:
         p["fit"] = auto_fit(p["width"], p["height"], screen)  # the card's Fills / Whole badge
+        if p["src"].startswith("file:"):  # a saved photo whose post the mod never loaded: the file is all there is
+            p["thumb"] = p["src"]
+            continue
         f = thumb_file(p["src"])
         if f.exists():
             os.utime(f)  # keeps it out of the 30-day prune
@@ -1230,7 +1325,7 @@ def main(argv):
             missing.append(p["src"])
     # query/key/pages let the shell drop stale results
     emit({**out, "photos": photos, "totalFound": len(photos), "query": argv[1], "pages": pages,
-          "key": "|".join([arg("--orient", ""), arg("--res", ""), entity_key, "tagged" if tagged else "", sort, category, since, "fills" if fills else ""])})
+          "key": "|".join([arg("--orient", ""), arg("--res", ""), entity_key, "tagged" if tagged else "", sort, category, since, "fills" if fills else "", "saved" if saved_dir else ""])})
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         for src, url in pool.map(fetch_thumb, missing):
@@ -1262,5 +1357,10 @@ if __name__ == "__main__":
     assert [auto_fit(*s, (1920, 1080)) for s in ((1920, 1080), (3000, 2000), (1600, 1200), (1080, 1350), (0, 0))] == ["fill", "fill", "fit", "fit", "fill"]
     assert auto_fit(1080, 1920, (1080, 1920)) == "fill" and parse_screen("2560x1440") == (2560, 1440) and parse_screen("x") == DEFAULT_SCREEN
     assert fills_screen(1800, 1200, (1920, 1080)) and not fills_screen(1280, 720, (1920, 1080)) and not fills_screen(0, 0, (1920, 1080))
+    assert saved_matches("ITZY/Ryujin/Ryujin_2026-09-02_9g4cyn-0.jpg", {"type": "idol", "name": "Ryujin", "group": "ITZY"})
+    assert not saved_matches("NMIXX/Lily/Lily_x.jpg", {"type": "idol", "name": "Lily", "group": "ITZY"})
+    assert saved_matches("IU/IU_2026-04-03_ys081o-0.jpg", {"type": "idol", "name": "IU", "group": None})
+    assert saved_matches("ITZY/mix/ITZY_2026-09-17_8g362k-6.jpg", {"type": "group", "name": "ITZY"})
+    assert SAVED_NAME.search("Ryujin_2025-07-12_RYUJIN-AT-SOUNDWAVE-documents-1.jpeg").groups() == ("2025-07-12", "RYUJIN-AT-SOUNDWAVE-documents-1")
     assert [resolution(*s) for s in ((1024, 682), (1080, 1920), (2592, 1944), (4096, 3072), (8000, 6000))] == ["sd", "fhd", "2k", "4k", "8k"]
     sys.exit(main(sys.argv[1:]))

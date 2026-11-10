@@ -101,8 +101,8 @@ Singleton {
         : error ? error
         : source === "youtube" && ytListView ? "My playlist is empty. Shift+click a video to add it"
         : source === "youtube" && ytQueueView ? "Up next is empty. Ctrl+click a video (or Ctrl+P) to play it next"
-        : !_query ? (source === "youtube" ? "Search YouTube or paste a video / playlist link" : "Type an idol or group name") + (recent.length ? ", or pick a recent search below the box" : "")
-        : _savedOnly && photos.length ? "None of the " + photos.length + " photos loaded so far are saved" + (hasMore ? ". Turn off Saved only to load more" : "")
+        : !_query && !_savedOnly ? (source === "youtube" ? "Search YouTube or paste a video / playlist link" : "Type an idol or group name") + (recent.length ? ", or pick a recent search below the box" : "")
+        : _savedOnly ? (_query ? "No saved photos of " + _query + " match these filters" : "No saved photos match these filters") + " (Wallpapers/kpopping)"
         : "No " + (source === "youtube" ? "videos" : "photos match these filters") + (hasMore ? " yet — scroll down or wait for more" : "")
     signal queryRequested(string query) // a "recent search" chip was clicked
 
@@ -179,13 +179,13 @@ Singleton {
     readonly property string _res: filters.filter(f => ["sd", "hd", "fhd", "2k", "4k", "8k"].includes(f)).join(",")
     readonly property bool _tagged: filters.includes("tagged")
     readonly property bool _fills: filters.includes("fills")
-    readonly property bool _savedOnly: filters.includes("saved") && source !== "youtube"   // here, not in the bridge: it knows nothing of your library
+    readonly property bool _savedOnly: filters.includes("saved") && source !== "youtube"   // your saved photos instead of kpopping's feed
     readonly property string _sort: (filters.find(f => f.startsWith("sort:")) || "sort:hot").slice(5)
     readonly property string _since: (filters.find(f => f.startsWith("since:")) || "since:").slice(6)
     readonly property string _cat: (filters.find(f => f.startsWith("cat:")) || "cat:").slice(4)
     property string entityKey: ""      // a match picked from the chips ("" = the best one)
     readonly property string _key: source === "youtube" ? "yt|" + (ytListView ? "list" : ytQueueView ? "queue" : "")
-        : [_orient, _res, entityKey, _tagged ? "tagged" : "", _sort, _cat, _since, _fills ? "fills" : ""].join("|")
+        : [_orient, _res, entityKey, _tagged ? "tagged" : "", _sort, _cat, _since, _fills ? "fills" : "", _savedOnly ? "saved" : ""].join("|")
     readonly property bool ytListView: filters.includes("yt:playlist")
     readonly property bool ytQueueView: filters.includes("yt:queue")
 
@@ -248,8 +248,9 @@ Singleton {
             pages = 1;
             photos = [];
         }
-        if (_sort !== _shownSort || _cat + "|" + _since !== _shownRange) {   // a different order / set starts again from the top
+        if (_sort !== _shownSort || _cat + "|" + _since !== _shownRange || _savedOnly !== _shownSaved) {   // a different order / set starts again from the top
             _shownSort = _sort;
+            _shownSaved = _savedOnly;
             _shownRange = _cat + "|" + _since;
             pages = 1;
             photos = [];
@@ -257,8 +258,6 @@ Singleton {
         _ytOptionsChanged();
         _autoPages = 0;
         debounce.restart();
-        if (_savedOnly && !searchProc.running && shownQuery === _query)   // Saved only just turned on over shown results
-            _topUp();
     }
 
     // ── results ─────────────────────────────────────────────────────────
@@ -286,17 +285,37 @@ Singleton {
         if (p && p.post)
             queryRequested("https://kpopping.com/kpics/" + p.post);
     }
-    // In the browser: the photo itself (full size), or its post (the whole gallery) on kpopping.com
+    // The post (the whole gallery) on kpopping.com, in the browser
     function postUrl(src) {
         const p = bySrc[src];
         return source !== "youtube" && p && p.post ? "https://kpopping.com/kpics/" + p.post : "";
     }
-    function openInBrowser(src, wholePost) {
-        const url = wholePost ? postUrl(src) : (bySrc[src] ? src : "");
+    function openPostInBrowser(src) {
+        const url = postUrl(src);
         if (!url)
             return;
         Visibilities.setActiveModule("");   // out of the way of the browser window
         Qt.openUrlExternally(url);
+    }
+    function _fileUrl(path) {
+        return "file://" + path.split("/").map(encodeURIComponent).join("/");
+    }
+    // The saved file in your image viewer
+    function openSaved(src) {
+        const path = savedPath(src);
+        if (!path)
+            return;
+        Visibilities.setActiveModule("");
+        Qt.openUrlExternally(_fileUrl(path));
+    }
+    // Its folder in the file manager, the file selected (FileManager1: Dolphin, Nautilus, …), else just the folder
+    function showSavedInFolder(src) {
+        const path = savedPath(src);
+        if (!path)
+            return;
+        Visibilities.setActiveModule("");
+        Quickshell.execDetached(["sh", "-c", 'busctl --user call org.freedesktop.FileManager1 /org/freedesktop/FileManager1 org.freedesktop.FileManager1 ShowItems ass 1 "$1" "" >/dev/null 2>&1 || xdg-open "$2"',
+                                 "sh", _fileUrl(path), _fileUrl(path.replace(/\/[^/]*$/, "")) ]);
     }
     // Already in your library: saved files end in _<the photo's id>.<ext> (see the bridge's save_path)
     readonly property var _savedIds: {
@@ -304,19 +323,26 @@ Singleton {
         const wm = GlobalStates.wallpaperManager;
         for (const path of (wm && wm.wallpaperPaths) || [])
             if (path.indexOf("/kpopping/") !== -1)
-                ids[_photoId(path)] = true;
+                ids[_photoId(path)] = path;
         return ids;
     }
     function _photoId(path) {
         return path.split("/").pop().split("_").pop().replace(/\.[^.]*$/, "");
     }
+    // the photo's file in your library, "" if it isn't saved (Saved only results carry it as "local")
+    function savedPath(src) {
+        const p = bySrc[src] || (src === previewSrc ? previewPhoto : null);
+        if (source === "youtube" || !p)
+            return "";
+        return p.local || (p.save ? _savedIds[_photoId(p.save)] || "" : "");
+    }
     function isSaved(src) {
-        const p = bySrc[src];
-        return source !== "youtube" && !!p && !!p.save && !!_savedIds[_photoId(p.save)];
+        return savedPath(src) !== "";
     }
     property string shownQuery: ""     // query the current photos belong to
     property string _shownKey: ""
     property string _shownSort: "hot"
+    property bool _shownSaved: false
     property string _shownRange: "|"   // category | date range of the shown photos
     property int _shownPages: 0
     property var thumbs: ({})          // src -> image URL (cached file, or a fallback)
@@ -324,11 +350,10 @@ Singleton {
     property bool hasMore: false
     property bool appending: false     // next photos update only adds a page (tab keeps its scroll)
     property int _autoPages: 0
-    readonly property var shownPhotos: _savedOnly ? photos.filter(p => isSaved(p.src)) : photos
-    readonly property var urls: shownPhotos.map(p => p.src)
-    // a strict filter (or Saved only) can leave a page nearly empty: fetch a few more on its own
+    readonly property var urls: photos.map(p => p.src)
+    // a strict filter can leave a page nearly empty: fetch a few more on its own
     function _topUp() {
-        if (shownPhotos.length < 28 && hasMore && _autoPages < (_savedOnly ? 10 : 3)) {
+        if (photos.length < 28 && hasMore && _autoPages < 3) {
             _autoPages++;
             Qt.callLater(loadMore);
         }
@@ -364,7 +389,7 @@ Singleton {
             _autoPages = 0;
             error = "";
             progress = "";
-            searching = _query !== "";
+            searching = _query !== "" || _savedOnly;
             filters = filters.filter(f => !f.startsWith("entity:"));
         }
         debounce.restart();
@@ -392,7 +417,7 @@ Singleton {
             _ytShowList(ytQueueView ? ytQueue.concat(ytComing) : ytPlaylist);
             return;
         }
-        if (!_query || (_query === shownQuery && _key === _shownKey && pages === _shownPages && !error)) {
+        if (!_query && !_savedOnly || (_query === shownQuery && _key === _shownKey && pages === _shownPages && !error)) {
             searching = false;   // nothing to do, or these results are already showing
             return;
         }
@@ -404,7 +429,8 @@ Singleton {
             : ["python3", bridge, "search", _query, "--orient", _orient, "--res", _res, "--pages", String(pages)]
                 .concat(entityKey ? ["--entity", entityKey] : [], _tagged ? ["--tagged"] : [], ["--sort", _sort],
                         _cat ? ["--category", _cat] : [], _since ? ["--since", _since] : [],
-                        ["--screen", screenSize(AxctlService.focusedMonitor ? AxctlService.focusedMonitor.name : "")], _fills ? ["--fills"] : []);
+                        ["--screen", screenSize(AxctlService.focusedMonitor ? AxctlService.focusedMonitor.name : "")], _fills ? ["--fills"] : [],
+                        _savedOnly ? ["--saved", _kpoppingDir()] : []);
         searchProc.running = true;
     }
 
@@ -460,7 +486,7 @@ Singleton {
                 root.shownQuery = d.query;
                 root._shownKey = d.key;
                 root._shownPages = d.pages;
-                if (d.status === "ok")
+                if (d.status === "ok" && d.query)
                     root._remember(d.query);
                 // show the picked match as the active chip (no new search: it's the default pick)
                 if (root.entity && root.candidates.length && !root.filters.includes("entity:" + root.entity.key))
@@ -508,7 +534,7 @@ Singleton {
         const photo = bySrc[src] || (src === previewSrc ? previewPhoto : null);
         if (!wm || !wm.wallpaperDir || !photo || fetcher.running)
             return;
-        const path = wm.wallpaperDir.replace(/\/+$/, "") + "/kpopping/" + photo.save;
+        const path = savedPath(src) || _kpoppingDir() + "/" + photo.save;
         const fromPreview = src === previewSrc && previewing ? previewPath : "";
         _clearPreview();
         _moveFit(fromPreview, path);
@@ -539,6 +565,11 @@ Singleton {
         }
         if (changed)
             SkwdWall.applied = next;
+    }
+
+    function _kpoppingDir() {
+        const wm = GlobalStates.wallpaperManager;
+        return wm && wm.wallpaperDir ? wm.wallpaperDir.replace(/\/+$/, "") + "/kpopping" : "";
     }
 
     // ── desktop preview ─────────────────────────────────────────────────
@@ -575,7 +606,13 @@ Singleton {
         previewSrc = src;
         previewPhoto = bySrc[src];
         _previewScreen = screenName;
-        _fetch(src, "", screenName);
+        const local = savedPath(src);
+        if (local) {   // already in your library: show that file, nothing to download
+            _set(local, screenName, false);
+            previewPath = local;
+        } else {
+            _fetch(src, "", screenName);
+        }
     }
 
     function savePreview() {
@@ -589,7 +626,8 @@ Singleton {
         const was = previewing || previewPending;
         if (previewing && _revertPath)
             _set(_revertPath, _previewScreen, false);
-        _moveFit(previewPath, "");
+        if (previewPath.startsWith(cacheDir))   // a saved file keeps its fit
+            _moveFit(previewPath, "");
         _clearPreview();
         if (!was)
             return;
@@ -1405,7 +1443,7 @@ Singleton {
         fitFile.setText(JSON.stringify(next, null, 1) + "\n");
     }
     function _moveFit(from, to) {
-        if (!from || !fitOverrides[from])
+        if (!from || from === to || !fitOverrides[from])
             return;
         const next = Object.assign({}, fitOverrides);
         if (to)
