@@ -164,7 +164,7 @@ index b60e100..991dc32 100644
              }
          }
 diff --git a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
-index f914730..2d19925 100644
+index f914730..04c2cf0 100644
 --- a/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 +++ b/modules/widgets/dashboard/wallpapers/WallpapersTab.qml
 @@ -14,7 +14,7 @@ FocusScope {
@@ -176,7 +176,7 @@ index f914730..2d19925 100644
      property int selectedIndex: GlobalStates.wallpaperSelectedIndex
  
      // Función para actualizar el índice seleccionado de forma centralizada
-@@ -89,9 +89,261 @@ FocusScope {
+@@ -89,9 +89,289 @@ FocusScope {
      property var activeFilters: []  // Lista de tipos de archivo seleccionados para filtrar
  
      // Configuración interna del grid
@@ -357,7 +357,8 @@ index f914730..2d19925 100644
      readonly property int wallpaperMargin: 4
  
 +    // positive.ambxst-kpopping: on a kpopping photo card: "Saved" if it's in your library, what Auto fit will
-+    // do on your screen (Fills / Whole), and on the selected card a button that opens the whole post it came from
++    // do on your screen (Fills / Whole), and on the selected card buttons that open the photo or its post in the
++    // browser, and the whole post here
 +    component KpPhotoMarks: Item {
 +        id: marks
 +        property string src: ""
@@ -369,7 +370,7 @@ index f914730..2d19925 100644
 +            anchors.top: parent.top
 +            anchors.left: parent.left
 +            anchors.margins: 6
-+            visible: KpoppingService.isSaved(marks.src)
++            visible: KpoppingService.isSaved(marks.src) && !marks.selected   // selected: the buttons need the room, the label says it
 +            variant: "primary"
 +            width: savedRow.implicitWidth + 12
 +            height: 22
@@ -396,21 +397,48 @@ index f914730..2d19925 100644
 +            }
 +        }
 +
-+        ToggleButton {
++        // selected card: open the photo / its post on kpopping.com in the browser, and the whole post here
++        Row {
 +            anchors.top: parent.top
 +            anchors.right: parent.right
 +            anchors.margins: 6
-+            implicitWidth: 26
-+            implicitHeight: 26
-+            iconSize: 14
-+            radius: Styling.radius(2)
-+            visible: marks.selected && KpoppingService.canOpenPost(marks.src)
-+            buttonIcon: Icons.squaresFour
-+            tooltipText: {
-+                const p = KpoppingService.bySrc[marks.src];
-+                return "Show the whole post" + (p && p.count > 1 ? " (" + p.count + " photos)" : "");
++            spacing: 4
++            visible: marks.selected
++
++            ToggleButton {
++                implicitWidth: 26
++                implicitHeight: 26
++                iconSize: 14
++                radius: Styling.radius(2)
++                buttonIcon: Icons.image
++                tooltipText: "Open the photo in your browser"
++                onToggle: function () { KpoppingService.openInBrowser(marks.src, false); }
 +            }
-+            onToggle: function () { KpoppingService.openPost(marks.src); }
++
++            ToggleButton {
++                implicitWidth: 26
++                implicitHeight: 26
++                iconSize: 14
++                radius: Styling.radius(2)
++                visible: KpoppingService.postUrl(marks.src) !== ""
++                buttonIcon: Icons.globe
++                tooltipText: "Open the whole gallery on kpopping.com"
++                onToggle: function () { KpoppingService.openInBrowser(marks.src, true); }
++            }
++
++            ToggleButton {
++                implicitWidth: 26
++                implicitHeight: 26
++                iconSize: 14
++                radius: Styling.radius(2)
++                visible: KpoppingService.canOpenPost(marks.src)
++                buttonIcon: Icons.squaresFour
++                tooltipText: {
++                    const p = KpoppingService.bySrc[marks.src];
++                    return "Show the whole post here" + (p && p.count > 1 ? " (" + p.count + " photos)" : "");
++                }
++                onToggle: function () { KpoppingService.openPost(marks.src); }
++            }
 +        }
 +
 +        StyledRect {
@@ -419,7 +447,7 @@ index f914730..2d19925 100644
 +            anchors.top: parent.top
 +            anchors.left: savedBadge.visible ? savedBadge.right : parent.left
 +            anchors.margins: 6
-+            visible: fit !== ""
++            visible: fit !== "" && !marks.selected
 +            variant: "internalbg"
 +            width: fitText.implicitWidth + 12
 +            height: 22
@@ -439,7 +467,7 @@ index f914730..2d19925 100644
      // Array de elementos focusables para navegación cíclica
      property var focusableElements: [
          {
-@@ -136,6 +388,19 @@ FocusScope {
+@@ -136,6 +416,19 @@ FocusScope {
                  settingsBtn.forceActiveFocus();
              }
          },
@@ -459,7 +487,7 @@ index f914730..2d19925 100644
          {
              id: "filters",
              focusFunc: function () {
-@@ -214,7 +479,14 @@ FocusScope {
+@@ -214,7 +507,14 @@ FocusScope {
              const rowStartIndex = currentRow * wallpapersTabRoot.gridColumns;
  
              // Posicionar para que la fila esté centrada verticalmente
@@ -475,7 +503,7 @@ index f914730..2d19925 100644
          }
      }
  
-@@ -254,6 +526,8 @@ FocusScope {
+@@ -254,6 +554,8 @@ FocusScope {
  
      // Propiedad calculada que filtra los fondos de pantalla según el texto de búsqueda y tipos activos.
      property var filteredWallpapers: {
@@ -484,7 +512,7 @@ index f914730..2d19925 100644
          if (!GlobalStates.wallpaperManager)
              return [];
  
-@@ -320,6 +594,8 @@ FocusScope {
+@@ -320,6 +622,8 @@ FocusScope {
                  // Manejo de eventos de búsqueda y teclado.
                  onSearchTextChanged: text => {
                      searchText = text;
@@ -493,7 +521,7 @@ index f914730..2d19925 100644
                      if (text.length > 0 && filteredWallpapers.length > 0) {
                          setSelectedIndex(0);
                      } else {
-@@ -331,6 +607,27 @@ FocusScope {
+@@ -331,6 +635,27 @@ FocusScope {
                      Visibilities.setActiveModule("");
                  }
  
@@ -521,7 +549,7 @@ index f914730..2d19925 100644
                  onTabPressed: {
                      focusNextElement();
                  }
-@@ -340,6 +637,14 @@ FocusScope {
+@@ -340,6 +665,14 @@ FocusScope {
                  }
  
                  onDownPressed: {
@@ -536,7 +564,7 @@ index f914730..2d19925 100644
                      if (filteredWallpapers.length > 0) {
                          if (selectedIndex < filteredWallpapers.length - 1) {
                              let newIndex = selectedIndex + wallpapersTabRoot.gridColumns;
-@@ -353,6 +658,14 @@ FocusScope {
+@@ -353,6 +686,14 @@ FocusScope {
                      }
                  }
                  onUpPressed: {
@@ -551,7 +579,7 @@ index f914730..2d19925 100644
                      if (filteredWallpapers.length > 0) {
                          if (selectedIndex === -1) {
                              setSelectedIndex(0);
-@@ -362,6 +675,10 @@ FocusScope {
+@@ -362,6 +703,10 @@ FocusScope {
                      }
                  }
                  onLeftPressed: {
@@ -562,7 +590,7 @@ index f914730..2d19925 100644
                      if (filteredWallpapers.length > 0) {
                          if (selectedIndex === -1) {
                              setSelectedIndex(0);
-@@ -371,6 +688,10 @@ FocusScope {
+@@ -371,6 +716,10 @@ FocusScope {
                      }
                  }
                  onRightPressed: {
@@ -573,7 +601,7 @@ index f914730..2d19925 100644
                      if (filteredWallpapers.length > 0) {
                          if (selectedIndex < filteredWallpapers.length - 1) {
                              setSelectedIndex(selectedIndex + 1);
-@@ -382,7 +703,9 @@ FocusScope {
+@@ -382,7 +731,9 @@ FocusScope {
                  onAccepted: {
                      if (selectedIndex >= 0 && selectedIndex < filteredWallpapers.length) {
                          let selectedWallpaper = filteredWallpapers[selectedIndex];
@@ -584,7 +612,7 @@ index f914730..2d19925 100644
                              if (isPerScreen && currentScreenName !== "") {
                                  GlobalStates.wallpaperManager.setWallpaper(selectedWallpaper, currentScreenName);
                              } else {
-@@ -1049,6 +1372,93 @@ FocusScope {
+@@ -1049,6 +1400,93 @@ FocusScope {
                  }
              }
  
@@ -678,7 +706,7 @@ index f914730..2d19925 100644
              // Scheme Selector a la derecha
              Item {
                  visible: false
-@@ -1090,10 +1500,25 @@ FocusScope {
+@@ -1090,10 +1528,25 @@ FocusScope {
                  id: wallpapersFilterBar
                  anchors.horizontalCenter: parent.horizontalCenter
                  width: Math.min(implicitWidth, parent.width)
@@ -706,7 +734,7 @@ index f914730..2d19925 100644
                  }
  
                  onEscapePressedOnFilters: {
-@@ -1124,15 +1549,297 @@ FocusScope {
+@@ -1124,15 +1577,297 @@ FocusScope {
              readonly property real gridWidth: width + (wallpapersTabRoot.wallpaperMargin * 2)
              readonly property real cellSize: gridWidth / wallpapersTabRoot.gridColumns
  
@@ -1006,7 +1034,7 @@ index f914730..2d19925 100644
                  currentIndex: selectedIndex
  
                  // Propiedad para detectar si está en movimiento (drag o flick)
-@@ -1151,6 +1858,28 @@ FocusScope {
+@@ -1151,6 +1886,28 @@ FocusScope {
                  flickDeceleration: 5000
                  maximumFlickVelocity: 8000
  
@@ -1035,7 +1063,7 @@ index f914730..2d19925 100644
                  // Sincronizar selectedIndex cuando el GridView cambia su currentIndex
                  onCurrentIndexChanged: {
                      if (currentIndex !== selectedIndex && currentIndex >= 0) {
-@@ -1197,7 +1926,9 @@ FocusScope {
+@@ -1197,7 +1954,9 @@ FocusScope {
                          Rectangle {
                              anchors.fill: parent
                              anchors.topMargin: -20
@@ -1046,7 +1074,7 @@ index f914730..2d19925 100644
                              anchors.leftMargin: -20
                              anchors.rightMargin: -20
                              color: "transparent"
-@@ -1221,7 +1952,7 @@ FocusScope {
+@@ -1221,7 +1980,7 @@ FocusScope {
                                  property bool isCurrentWallpaper: (wallpaperGrid.currentIndex >= 0 && wallpaperGrid.currentIndex < filteredWallpapers.length) ? (filteredWallpapers[wallpaperGrid.currentIndex] === wallpapersTabRoot.activeWallpaperPath) : false
                                  property bool showHoveredItem: currentItem && currentItem.isHovered && !visible
  
@@ -1055,7 +1083,7 @@ index f914730..2d19925 100644
  
                                  Rectangle {
                                      anchors.verticalCenter: parent.verticalCenter
-@@ -1239,6 +1970,9 @@ FocusScope {
+@@ -1239,6 +1998,9 @@ FocusScope {
                                          text: {
                                              if (parent.parent.isCurrentWallpaper) {
                                                  return I18n.t("wallpapers.current");
@@ -1065,7 +1093,7 @@ index f914730..2d19925 100644
                                              } else if (wallpaperGrid.currentIndex >= 0 && wallpaperGrid.currentIndex < filteredWallpapers.length) {
                                                  return filteredWallpapers[wallpaperGrid.currentIndex].split('/').pop();
                                              }
-@@ -1320,6 +2054,7 @@ FocusScope {
+@@ -1320,6 +2082,7 @@ FocusScope {
                      width: wallpaperGrid.cellWidth
                      height: wallpaperGrid.cellHeight
                      color: "transparent"
@@ -1073,7 +1101,7 @@ index f914730..2d19925 100644
  
                      property bool isCurrentWallpaper: modelData === wallpapersTabRoot.activeWallpaperPath
  
-@@ -1342,6 +2077,9 @@ FocusScope {
+@@ -1342,6 +2105,9 @@ FocusScope {
                      Item {
                          anchors.fill: parent
                          anchors.margins: wallpapersTabRoot.wallpaperMargin
@@ -1083,7 +1111,7 @@ index f914730..2d19925 100644
  
                          ClippingRectangle {
                              anchors.fill: parent
-@@ -1354,14 +2092,18 @@ FocusScope {
+@@ -1354,14 +2120,18 @@ FocusScope {
                                      anchors.fill: parent
                                      sourceComponent: staticImageComponent
                                      property string sourceFile: modelData
@@ -1104,7 +1132,7 @@ index f914730..2d19925 100644
  
                                      Text {
                                          anchors.centerIn: parent
-@@ -1376,11 +2118,34 @@ FocusScope {
+@@ -1376,11 +2146,34 @@ FocusScope {
                                              to: 360
                                              duration: 1000
                                              loops: Animation.Infinite
@@ -1140,7 +1168,7 @@ index f914730..2d19925 100644
                          }
                      }
  
-@@ -1399,22 +2164,164 @@ FocusScope {
+@@ -1399,22 +2192,164 @@ FocusScope {
                          onExited: {
                              parent.isHovered = false;
                          }
@@ -1316,7 +1344,7 @@ index f914730..2d19925 100644
                          }
                      }
  
-@@ -1455,10 +2362,16 @@ FocusScope {
+@@ -1455,10 +2390,16 @@ FocusScope {
          Image {
              mipmap: true
              source: {

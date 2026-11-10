@@ -88,7 +88,7 @@ Singleton {
             return p.title + (p.channel ? " · " + p.channel : "") + (p.duration ? " · " + _clock(p.duration) : "")
                 + (ytInPlaylist(p.id) ? " · in My playlist" : "")
                 + (p.coming ? " · autoplay (click: jump here, Ctrl+click: queue)" : ytQueued(p.id) ? " · up next" : "");
-        return (isSaved(p.src) ? "Saved · " : "") + p.width + "×" + p.height + " · " + p.likes + (p.likes === 1 ? " like · " : " likes · ") + p.title
+        return (isSaved(p.src) ? "Saved · " : "") + (p.fit ? (p.fit === "fill" ? "Fills · " : "Whole · ") : "") + p.width + "×" + p.height + " · " + p.likes + (p.likes === 1 ? " like · " : " likes · ") + p.title
             + (p.count > 1 && !postView ? " (" + p.count + " photos)" : "");
     }
     function _clock(sec) {
@@ -102,6 +102,7 @@ Singleton {
         : source === "youtube" && ytListView ? "My playlist is empty. Shift+click a video to add it"
         : source === "youtube" && ytQueueView ? "Up next is empty. Ctrl+click a video (or Ctrl+P) to play it next"
         : !_query ? (source === "youtube" ? "Search YouTube or paste a video / playlist link" : "Type an idol or group name") + (recent.length ? ", or pick a recent search below the box" : "")
+        : _savedOnly && photos.length ? "None of the " + photos.length + " photos loaded so far are saved" + (hasMore ? ". Turn off Saved only to load more" : "")
         : "No " + (source === "youtube" ? "videos" : "photos match these filters") + (hasMore ? " yet — scroll down or wait for more" : "")
     signal queryRequested(string query) // a "recent search" chip was clicked
 
@@ -131,7 +132,9 @@ Singleton {
         { label: "FHD", type: "fhd" },
         { label: "2K", type: "2k" },
         { label: "4K", type: "4k" },
-        { label: "8K", type: "8k" }
+        { label: "8K", type: "8k" },
+        { label: "", type: "sep:saved" },
+        { label: "Saved only", type: "saved" }
     ]
     readonly property var _shapeChips: staticChips.slice(staticChips.findIndex(c => c.type === "fills"))   // a post: only these apply
     // how the FilterBar draws a chip: a tab (one is always picked), an icon toggle, a divider, or a plain chip
@@ -176,6 +179,7 @@ Singleton {
     readonly property string _res: filters.filter(f => ["sd", "hd", "fhd", "2k", "4k", "8k"].includes(f)).join(",")
     readonly property bool _tagged: filters.includes("tagged")
     readonly property bool _fills: filters.includes("fills")
+    readonly property bool _savedOnly: filters.includes("saved") && source !== "youtube"   // here, not in the bridge: it knows nothing of your library
     readonly property string _sort: (filters.find(f => f.startsWith("sort:")) || "sort:hot").slice(5)
     readonly property string _since: (filters.find(f => f.startsWith("since:")) || "since:").slice(6)
     readonly property string _cat: (filters.find(f => f.startsWith("cat:")) || "cat:").slice(4)
@@ -253,6 +257,8 @@ Singleton {
         _ytOptionsChanged();
         _autoPages = 0;
         debounce.restart();
+        if (_savedOnly && !searchProc.running && shownQuery === _query)   // Saved only just turned on over shown results
+            _topUp();
     }
 
     // ── results ─────────────────────────────────────────────────────────
@@ -280,6 +286,18 @@ Singleton {
         if (p && p.post)
             queryRequested("https://kpopping.com/kpics/" + p.post);
     }
+    // In the browser: the photo itself (full size), or its post (the whole gallery) on kpopping.com
+    function postUrl(src) {
+        const p = bySrc[src];
+        return source !== "youtube" && p && p.post ? "https://kpopping.com/kpics/" + p.post : "";
+    }
+    function openInBrowser(src, wholePost) {
+        const url = wholePost ? postUrl(src) : (bySrc[src] ? src : "");
+        if (!url)
+            return;
+        Visibilities.setActiveModule("");   // out of the way of the browser window
+        Qt.openUrlExternally(url);
+    }
     // Already in your library: saved files end in _<the photo's id>.<ext> (see the bridge's save_path)
     readonly property var _savedIds: {
         const ids = {};
@@ -306,7 +324,15 @@ Singleton {
     property bool hasMore: false
     property bool appending: false     // next photos update only adds a page (tab keeps its scroll)
     property int _autoPages: 0
-    readonly property var urls: photos.map(p => p.src)
+    readonly property var shownPhotos: _savedOnly ? photos.filter(p => isSaved(p.src)) : photos
+    readonly property var urls: shownPhotos.map(p => p.src)
+    // a strict filter (or Saved only) can leave a page nearly empty: fetch a few more on its own
+    function _topUp() {
+        if (shownPhotos.length < 28 && hasMore && _autoPages < (_savedOnly ? 10 : 3)) {
+            _autoPages++;
+            Qt.callLater(loadMore);
+        }
+    }
     readonly property var bySrc: {
         const m = {};
         for (const p of photos)
@@ -439,11 +465,7 @@ Singleton {
                 // show the picked match as the active chip (no new search: it's the default pick)
                 if (root.entity && root.candidates.length && !root.filters.includes("entity:" + root.entity.key))
                     root.filters = root.filters.filter(f => !f.startsWith("entity:")).concat(["entity:" + root.entity.key]);
-                // a strict filter can leave a page nearly empty: fetch a few more on its own
-                if (root.photos.length < 28 && root.hasMore && root._autoPages < 3) {
-                    root._autoPages++;
-                    Qt.callLater(root.loadMore);
-                }
+                root._topUp();
             }
         }
         onExited: {
